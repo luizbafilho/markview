@@ -3,9 +3,11 @@ use std::{
     io::Write,
     path::{Path, PathBuf},
     sync::Arc,
+    time::Duration,
 };
 
 use anyhow::Context;
+use catppuccin::PALETTE;
 use image::DynamicImage;
 use ratatui::{
     crossterm::{
@@ -24,6 +26,7 @@ use ratatui_image::{
     protocol::Protocol,
 };
 
+mod heading_image;
 mod kitty;
 mod text_sizing;
 use ratatui_markdown::{
@@ -34,95 +37,102 @@ use ratatui_markdown::{
     },
     theme::{CodeColors, Generation, RichTextTheme, ThemeConfig},
 };
+use terminal_colorsaurus::{QueryOptions, ThemeMode, theme_mode};
 
-// Catppuccin Latte, https://catppuccin.com/palette
-mod latte {
-    use ratatui::style::Color;
-    const fn rgb(hex: u32) -> Color {
-        Color::Rgb((hex >> 16) as u8, (hex >> 8) as u8, hex as u8)
-    }
-    pub const PINK: Color = rgb(0xea76cb);
-    pub const MAUVE: Color = rgb(0x8839ef);
-    pub const RED: Color = rgb(0xd20f39);
-    pub const PEACH: Color = rgb(0xfe640b);
-    pub const YELLOW: Color = rgb(0xdf8e1d);
-    pub const GREEN: Color = rgb(0x40a02b);
-    pub const SKY: Color = rgb(0x04a5e5);
-    pub const SAPPHIRE: Color = rgb(0x209fb5);
-    pub const BLUE: Color = rgb(0x1e66f5);
-    pub const LAVENDER: Color = rgb(0x7287fd);
-    pub const TEXT: Color = rgb(0x4c4f69);
-    pub const SUBTEXT0: Color = rgb(0x6c6f85);
-    pub const OVERLAY1: Color = rgb(0x8c8fa1);
-    pub const OVERLAY0: Color = rgb(0x9ca0b0);
-    pub const SURFACE0: Color = rgb(0xccd0da);
-    pub const BASE: Color = rgb(0xeff1f5);
-    pub const MANTLE: Color = rgb(0xe6e9ef);
+fn rgb(c: catppuccin::Color) -> Color {
+    Color::Rgb(c.rgb.r, c.rgb.g, c.rgb.b)
 }
 
+/// Catppuccin Latte in light terminals, Frappé in dark ones.
 /// `ThemeConfig` has no background slot, and Mermaid picks its light or dark
-/// palette from `get_background_color`, so the background is set here.
-struct Latte(ThemeConfig);
+/// palette from `get_background_color`, so the background is kept here.
+struct Theme {
+    mode: ThemeMode,
+    config: ThemeConfig,
+    background: Color,
+    bar_background: Color,
+    bar_text: Color,
+    rule: Color,
+}
 
-impl Latte {
-    fn new() -> Self {
-        use latte::*;
-        Self(ThemeConfig {
-            r#gen: Generation(1),
-            text_color: TEXT,
-            muted_text_color: SUBTEXT0,
-            primary_color: MAUVE,
-            popup_selected_background: SURFACE0,
-            border_color: OVERLAY0,
-            focused_border_color: LAVENDER,
-            secondary_color: BLUE,
-            info_color: SAPPHIRE,
-            json_key_color: BLUE,
-            json_string_color: GREEN,
-            json_number_color: PEACH,
-            json_bool_color: MAUVE,
-            json_null_color: OVERLAY1,
-            accent_yellow: YELLOW,
-            code_colors: CodeColors {
-                comment: OVERLAY1,
-                keyword: MAUVE,
-                string: GREEN,
-                string_escape: PINK,
-                number: PEACH,
-                constant: PEACH,
-                function: BLUE,
-                r#type: YELLOW,
-                variable: TEXT,
-                property: LAVENDER,
-                operator: SKY,
-                punctuation: OVERLAY1,
-                attribute: YELLOW,
-                tag: MAUVE,
-                label: SAPPHIRE,
-                error: RED,
+impl Theme {
+    fn new(mode: ThemeMode) -> Self {
+        let (flavor, generation) = match mode {
+            ThemeMode::Light => (&PALETTE.latte, Generation(1)),
+            ThemeMode::Dark => (&PALETTE.frappe, Generation(2)),
+        };
+        let c = &flavor.colors;
+        Self {
+            mode,
+            config: ThemeConfig {
+                r#gen: generation,
+                text_color: rgb(c.text),
+                muted_text_color: rgb(c.subtext0),
+                primary_color: rgb(c.mauve),
+                popup_selected_background: rgb(c.surface0),
+                border_color: rgb(c.overlay0),
+                focused_border_color: rgb(c.lavender),
+                secondary_color: rgb(c.blue),
+                info_color: rgb(c.sapphire),
+                json_key_color: rgb(c.blue),
+                json_string_color: rgb(c.green),
+                json_number_color: rgb(c.peach),
+                json_bool_color: rgb(c.mauve),
+                json_null_color: rgb(c.overlay1),
+                accent_yellow: rgb(c.yellow),
+                code_colors: CodeColors {
+                    comment: rgb(c.overlay1),
+                    keyword: rgb(c.mauve),
+                    string: rgb(c.green),
+                    string_escape: rgb(c.pink),
+                    number: rgb(c.peach),
+                    constant: rgb(c.peach),
+                    function: rgb(c.blue),
+                    r#type: rgb(c.yellow),
+                    variable: rgb(c.text),
+                    property: rgb(c.lavender),
+                    operator: rgb(c.sky),
+                    punctuation: rgb(c.overlay1),
+                    attribute: rgb(c.yellow),
+                    tag: rgb(c.mauve),
+                    label: rgb(c.sapphire),
+                    error: rgb(c.red),
+                },
             },
-        })
+            background: rgb(c.base),
+            bar_background: rgb(c.mantle),
+            bar_text: rgb(c.subtext0),
+            rule: rgb(c.surface0),
+        }
+    }
+
+    fn base_style(&self) -> Style {
+        Style::new().bg(self.background).fg(self.get_text_color())
+    }
+
+    fn rule_style(&self) -> Style {
+        Style::new().bg(self.background).fg(self.rule)
     }
 }
 
-impl RichTextTheme for Latte {
-    fn generation(&self) -> Generation { self.0.generation() }
-    fn get_text_color(&self) -> Color { self.0.get_text_color() }
-    fn get_muted_text_color(&self) -> Color { self.0.get_muted_text_color() }
-    fn get_primary_color(&self) -> Color { self.0.get_primary_color() }
-    fn get_popup_selected_background(&self) -> Color { self.0.get_popup_selected_background() }
-    fn get_border_color(&self) -> Color { self.0.get_border_color() }
-    fn get_focused_border_color(&self) -> Color { self.0.get_focused_border_color() }
-    fn get_secondary_color(&self) -> Color { self.0.get_secondary_color() }
-    fn get_info_color(&self) -> Color { self.0.get_info_color() }
-    fn get_json_key_color(&self) -> Color { self.0.get_json_key_color() }
-    fn get_json_string_color(&self) -> Color { self.0.get_json_string_color() }
-    fn get_json_number_color(&self) -> Color { self.0.get_json_number_color() }
-    fn get_json_bool_color(&self) -> Color { self.0.get_json_bool_color() }
-    fn get_json_null_color(&self) -> Color { self.0.get_json_null_color() }
-    fn get_accent_yellow(&self) -> Color { self.0.get_accent_yellow() }
-    fn get_code_colors(&self) -> CodeColors { self.0.get_code_colors() }
-    fn get_background_color(&self) -> Color { latte::BASE }
+impl RichTextTheme for Theme {
+    fn generation(&self) -> Generation { self.config.generation() }
+    fn get_text_color(&self) -> Color { self.config.get_text_color() }
+    fn get_muted_text_color(&self) -> Color { self.config.get_muted_text_color() }
+    fn get_primary_color(&self) -> Color { self.config.get_primary_color() }
+    fn get_popup_selected_background(&self) -> Color { self.config.get_popup_selected_background() }
+    fn get_border_color(&self) -> Color { self.config.get_border_color() }
+    fn get_focused_border_color(&self) -> Color { self.config.get_focused_border_color() }
+    fn get_secondary_color(&self) -> Color { self.config.get_secondary_color() }
+    fn get_info_color(&self) -> Color { self.config.get_info_color() }
+    fn get_json_key_color(&self) -> Color { self.config.get_json_key_color() }
+    fn get_json_string_color(&self) -> Color { self.config.get_json_string_color() }
+    fn get_json_number_color(&self) -> Color { self.config.get_json_number_color() }
+    fn get_json_bool_color(&self) -> Color { self.config.get_json_bool_color() }
+    fn get_json_null_color(&self) -> Color { self.config.get_json_null_color() }
+    fn get_accent_yellow(&self) -> Color { self.config.get_accent_yellow() }
+    fn get_code_colors(&self) -> CodeColors { self.config.get_code_colors() }
+    fn get_background_color(&self) -> Color { self.background }
 }
 
 /// Loads images relative to the markdown file and sizes them using the
@@ -168,15 +178,19 @@ struct Doc {
     encoded: HashMap<usize, (u16, u16, Protocol)>,
 }
 
-fn rule_style() -> Style {
-    Style::new().bg(latte::BASE).fg(latte::SURFACE0)
-}
+/// Idle time before asking the terminal whether its background changed.
+const THEME_POLL: Duration = Duration::from_secs(1);
 
 fn kitty_id(image_index: usize) -> u32 {
     0x4D_4B_00 + image_index as u32 + 1
 }
 
-fn render(md: &str, base: &Path, area: Rect, theme: &Latte, cell_px: (u16, u16), sized_headings: bool) -> Doc {
+enum Sizing {
+    Osc66,
+    Image(ab_glyph::FontVec),
+}
+
+fn render(md: &str, base: &Path, area: Rect, theme: &Theme, cell_px: (u16, u16), sizing: Option<&Sizing>) -> Doc {
     let width = area.width as usize;
     let highlighter = Arc::new(TreeSitterHighlighter::new().with_code_colors(theme.get_code_colors()));
     let hooks = HighlightHooks::new(highlighter, width).with_border_color(theme.get_border_color());
@@ -190,7 +204,24 @@ fn render(md: &str, base: &Path, area: Rect, theme: &Latte, cell_px: (u16, u16),
     text_sizing::tag(&mut blocks);
     let max_img_h = area.height.saturating_sub(2).max(1);
     let mut out = renderer.render_full(&blocks, theme, &resolved, &mut resolver, area.width, max_img_h);
-    let (headings, rules) = text_sizing::extract(&mut out.lines, &mut out.images, sized_headings, area.width, rule_style());
+    let (mut headings, mut rules) =
+        text_sizing::extract(&mut out.lines, &mut out.images, sizing.is_some(), area.width, theme.rule_style());
+    if let Some(Sizing::Image(font)) = sizing {
+        for h in headings.drain(..) {
+            let line = std::mem::take(&mut out.lines[h.row]);
+            let (image, cols) =
+                heading_image::rasterize(font, &line, h.level, cell_px, area.width, theme.get_text_color(), theme.background);
+            out.images.push(ImagePlacement {
+                row: h.row,
+                col: 0,
+                width_cells: cols,
+                height_cells: text_sizing::ROWS,
+                image,
+                crop: None,
+            });
+        }
+        rules.clear();
+    }
     Doc {
         size: (area.width, area.height),
         lines: out.lines,
@@ -248,14 +279,19 @@ fn main() -> anyhow::Result<()> {
     let path = std::env::args().nth(1).context("usage: mkviewer <file.md>")?;
     let md = std::fs::read_to_string(&path).with_context(|| format!("reading {path}"))?;
     let base = Path::new(&path).parent().unwrap_or(Path::new(".")).to_path_buf();
-    let theme = Latte::new();
-
     let mut terminal = ratatui::init();
+    let theme = Theme::new(theme_mode(QueryOptions::default()).context("querying terminal background")?);
     let picker = Picker::from_query_stdio().context("querying terminal graphics support")?;
-    let sizing_supported = text_sizing::probe().context("probing text sizing support")?;
+    let sizing = if text_sizing::probe().context("probing text sizing support")? {
+        Some(Sizing::Osc66)
+    } else if picker.protocol_type() == ProtocolType::Kitty {
+        Some(Sizing::Image(heading_image::load_font()?))
+    } else {
+        None
+    };
     terminal.clear()?;
     execute!(std::io::stdout(), EnableMouseCapture)?;
-    let result = run(&mut terminal, &path, &md, &base, &theme, &picker, sizing_supported);
+    let result = run(&mut terminal, &path, &md, &base, theme, &picker, sizing.as_ref());
     if picker.protocol_type() == ProtocolType::Kitty {
         std::io::stdout().write_all(kitty::delete_all(std::env::var_os("TMUX").is_some()).as_bytes())?;
     }
@@ -269,16 +305,16 @@ fn run(
     path: &str,
     md: &str,
     base: &Path,
-    theme: &Latte,
+    mut theme: Theme,
     picker: &Picker,
-    sizing_supported: bool,
+    sizing_mode: Option<&Sizing>,
 ) -> anyhow::Result<()> {
     let mut scroll: usize = 0;
     let mut doc: Option<Doc> = None;
     let mut page: usize;
     let protocol = format!("{:?}", picker.protocol_type());
     let tmux = std::env::var_os("TMUX").is_some();
-    let mut sizing = sizing_supported;
+    let mut sizing = true;
     let mut drawn: Vec<text_sizing::Placed> = Vec::new();
 
     loop {
@@ -286,7 +322,7 @@ fn run(
             Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).areas(Rect::from((Default::default(), terminal.size()?)));
         let block = Block::new()
             .padding(Padding::new(2, 2, 1, 0))
-            .style(Style::new().bg(latte::BASE).fg(latte::TEXT));
+            .style(theme.base_style());
         let inner = block.inner(body);
 
         // ratatui clears the whole screen on resize, taking every sized heading with it.
@@ -294,7 +330,7 @@ fn run(
             drawn.clear();
         }
         if doc.as_ref().map(|d| d.size) != Some((inner.width, inner.height)) {
-            let d = render(md, base, inner, theme, picker.font_size(), sizing);
+            let d = render(md, base, inner, &theme, picker.font_size(), sizing_mode.filter(|_| sizing));
             if picker.protocol_type() == ProtocolType::Kitty {
                 let mut out = std::io::stdout().lock();
                 for (i, p) in d.images.iter().enumerate() {
@@ -314,9 +350,8 @@ fn run(
             .iter()
             .filter(|h| h.row >= scroll && h.row - scroll + text_sizing::ROWS as usize <= inner.height as usize)
             .filter_map(|h| {
-                let base = Style::new().bg(latte::BASE).fg(latte::TEXT);
                 let y = inner.y + (h.row - scroll) as u16;
-                text_sizing::place(&d.lines[h.row], h.level, inner.x, y, inner.width, base)
+                text_sizing::place(&d.lines[h.row], h.level, inner.x, y, inner.width, theme.base_style())
             })
             .collect();
         placed.extend(
@@ -324,7 +359,7 @@ fn run(
                 .iter()
                 .copied()
                 .filter(|&r| r >= scroll && r - scroll < inner.height as usize)
-                .map(|r| text_sizing::rule(inner.x, inner.y + (r - scroll) as u16, inner.width, rule_style())),
+                .map(|r| text_sizing::rule(inner.x, inner.y + (r - scroll) as u16, inner.width, theme.rule_style())),
         );
         let gone: Vec<_> = drawn.iter().filter(|p| !placed.contains(p)).cloned().collect();
         let fresh: Vec<_> = placed.iter().filter(|p| !drawn.contains(p)).cloned().collect();
@@ -340,21 +375,34 @@ fn run(
 
             let total = doc.lines.len();
             let pct = if total <= page { 100 } else { scroll * 100 / (total - page) };
-            let headings = match (sizing_supported, sizing) {
-                (false, _) => "unsupported",
-                (true, true) => "on",
-                (true, false) => "off",
+            let headings = match (sizing_mode, sizing) {
+                (None, _) => "unsupported",
+                (Some(_), false) => "off",
+                (Some(Sizing::Osc66), true) => "on",
+                (Some(Sizing::Image(_)), true) => "image",
             };
             let status_line = Line::from(format!(
                 " {path}  {pct}%  ·  images: {protocol}  ·  sized headings: {headings}  ·  j/k ↑/↓ scroll · space/b page · g/G top/bottom · t sizing · q quit"
             ))
-            .style(Style::new().bg(latte::MANTLE).fg(latte::SUBTEXT0));
+            .style(Style::new().bg(theme.bar_background).fg(theme.bar_text));
             f.render_widget(status_line, status);
         })?;
         text_sizing::draw(&mut std::io::stdout(), &fresh)?;
         drawn = placed;
 
-        match event::read()? {
+        let event = loop {
+            if event::poll(THEME_POLL)? {
+                break Some(event::read()?);
+            }
+            let mode = theme_mode(QueryOptions::default()).context("querying terminal background")?;
+            if mode != theme.mode {
+                theme = Theme::new(mode);
+                doc = None;
+                break None;
+            }
+        };
+        let Some(event) = event else { continue };
+        match event {
             Event::Key(k) if k.kind == KeyEventKind::Press => match k.code {
                 KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
                 KeyCode::Char('j') | KeyCode::Down => scroll += 1,
@@ -363,7 +411,7 @@ fn run(
                 KeyCode::Char('b') | KeyCode::PageUp | KeyCode::Char('u') => scroll = scroll.saturating_sub(page),
                 KeyCode::Char('g') | KeyCode::Home => scroll = 0,
                 KeyCode::Char('G') | KeyCode::End => scroll = usize::MAX / 2,
-                KeyCode::Char('t') if sizing_supported => {
+                KeyCode::Char('t') if sizing_mode.is_some() => {
                     sizing = !sizing;
                     doc = None;
                 }
@@ -375,6 +423,42 @@ fn run(
                 _ => {}
             },
             _ => {}
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn light_mode_uses_latte_and_dark_mode_uses_frappe() {
+        let light = Theme::new(ThemeMode::Light);
+        let dark = Theme::new(ThemeMode::Dark);
+        assert_eq!(light.get_background_color(), rgb(PALETTE.latte.colors.base));
+        assert_eq!(light.get_text_color(), rgb(PALETTE.latte.colors.text));
+        assert_eq!(dark.get_background_color(), rgb(PALETTE.frappe.colors.base));
+        assert_eq!(dark.get_text_color(), rgb(PALETTE.frappe.colors.text));
+        assert_ne!(light.generation(), dark.generation());
+    }
+
+    #[test]
+    fn image_headings_are_drawn_in_the_current_themes_colors() {
+        let sizing = Sizing::Image(heading_image::load_font().unwrap());
+        let area = Rect::new(0, 0, 80, 40);
+        for mode in [ThemeMode::Light, ThemeMode::Dark] {
+            let theme = Theme::new(mode);
+            let doc = render("# Title\n\n## Sub\n\n### Third\n", Path::new("."), area, &theme, (10, 20), Some(&sizing));
+            let Color::Rgb(r, g, b) = theme.background else { unreachable!() };
+
+            assert_eq!(doc.images.len(), 3, "{mode:?}");
+            // Inline formatting gives every heading span the text color.
+            let Color::Rgb(tr, tg, tb) = theme.get_text_color() else { unreachable!() };
+            for img in &doc.images {
+                let px = img.image.to_rgba8();
+                assert_eq!(px.get_pixel(0, 0).0[..3], [r, g, b], "{mode:?} background");
+                assert!(px.pixels().any(|p| p.0[..3] == [tr, tg, tb]), "{mode:?} text color missing");
+            }
         }
     }
 }
