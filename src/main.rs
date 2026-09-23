@@ -25,6 +25,7 @@ use ratatui_image::{
 };
 
 mod kitty;
+mod text_sizing;
 use ratatui_markdown::{
     highlight::{HighlightHooks, TreeSitterHighlighter},
     markdown::{
@@ -161,6 +162,7 @@ struct Doc {
     size: (u16, u16),
     lines: Vec<Line<'static>>,
     images: Vec<ImagePlacement>,
+    headings: Vec<text_sizing::Heading>,
     /// Non-kitty protocols, per image: (rows cut off the top, visible rows, encoded protocol).
     encoded: HashMap<usize, (u16, u16, Protocol)>,
 }
@@ -169,7 +171,7 @@ fn kitty_id(image_index: usize) -> u32 {
     0x4D_4B_00 + image_index as u32 + 1
 }
 
-fn render(md: &str, base: &Path, area: Rect, theme: &Latte, cell_px: (u16, u16)) -> Doc {
+fn render(md: &str, base: &Path, area: Rect, theme: &Latte, cell_px: (u16, u16), sized_headings: bool) -> Doc {
     let width = area.width as usize;
     let highlighter = Arc::new(TreeSitterHighlighter::new().with_code_colors(theme.get_code_colors()));
     let hooks = HighlightHooks::new(highlighter, width).with_border_color(theme.get_border_color());
@@ -179,13 +181,18 @@ fn render(md: &str, base: &Path, area: Rect, theme: &Latte, cell_px: (u16, u16))
         cell_px,
         fallback_color: theme.get_muted_text_color(),
     };
-    let (blocks, resolved) = renderer.parse_with_images(md, &mut resolver);
+    let (mut blocks, resolved) = renderer.parse_with_images(md, &mut resolver);
+    if sized_headings {
+        text_sizing::tag(&mut blocks);
+    }
     let max_img_h = area.height.saturating_sub(2).max(1);
-    let out = renderer.render_full(&blocks, theme, &resolved, &mut resolver, area.width, max_img_h);
+    let mut out = renderer.render_full(&blocks, theme, &resolved, &mut resolver, area.width, max_img_h);
+    let headings = text_sizing::extract(&mut out.lines, &mut out.images);
     Doc {
         size: (area.width, area.height),
         lines: out.lines,
         images: out.images,
+        headings,
         encoded: HashMap::new(),
     }
 }
@@ -241,8 +248,10 @@ fn main() -> anyhow::Result<()> {
 
     let mut terminal = ratatui::init();
     let picker = Picker::from_query_stdio().context("querying terminal graphics support")?;
+    let sizing_supported = text_sizing::probe().context("probing text sizing support")?;
+    terminal.clear()?;
     execute!(std::io::stdout(), EnableMouseCapture)?;
-    let result = run(&mut terminal, &path, &md, &base, &theme, &picker);
+    let result = run(&mut terminal, &path, &md, &base, &theme, &picker, sizing_supported);
     if picker.protocol_type() == ProtocolType::Kitty {
         std::io::stdout().write_all(kitty::delete_all(std::env::var_os("TMUX").is_some()).as_bytes())?;
     }
@@ -258,12 +267,15 @@ fn run(
     base: &Path,
     theme: &Latte,
     picker: &Picker,
+    sizing_supported: bool,
 ) -> anyhow::Result<()> {
     let mut scroll: usize = 0;
     let mut doc: Option<Doc> = None;
-    let mut page: usize = 1;
+    let mut page: usize;
     let protocol = format!("{:?}", picker.protocol_type());
     let tmux = std::env::var_os("TMUX").is_some();
+    let mut sizing = sizing_supported;
+    let mut drawn: Vec<text_sizing::Placed> = Vec::new();
 
     loop {
         let [body, status] =
@@ -274,7 +286,7 @@ fn run(
         let inner = block.inner(body);
 
         if doc.as_ref().map(|d| d.size) != Some((inner.width, inner.height)) {
-            let d = render(md, base, inner, theme, picker.font_size());
+            let d = render(md, base, inner, theme, picker.font_size(), sizing);
             if picker.protocol_type() == ProtocolType::Kitty {
                 let mut out = std::io::stdout().lock();
                 for (i, p) in d.images.iter().enumerate() {
@@ -286,22 +298,46 @@ fn run(
             doc = Some(d);
         }
 
+        let d = doc.as_ref().unwrap();
+        page = inner.height.max(1) as usize;
+        scroll = scroll.min(d.lines.len().saturating_sub(page));
+        let placed: Vec<text_sizing::Placed> = d
+            .headings
+            .iter()
+            .filter(|h| h.row >= scroll && h.row - scroll + text_sizing::ROWS as usize <= inner.height as usize)
+            .filter_map(|h| {
+                let base = Style::new().bg(latte::BASE).fg(latte::TEXT);
+                let y = inner.y + (h.row - scroll) as u16;
+                text_sizing::place(&d.lines[h.row], h.level, inner.x, y, inner.width, base)
+            })
+            .collect();
+        let gone: Vec<_> = drawn.iter().filter(|p| !placed.contains(p)).cloned().collect();
+        let fresh: Vec<_> = placed.iter().filter(|p| !drawn.contains(p)).cloned().collect();
+        text_sizing::erase(&mut std::io::stdout(), &gone)?;
+
         terminal.draw(|f| {
             let doc = doc.as_mut().unwrap();
-            page = inner.height.max(1) as usize;
-            scroll = scroll.min(doc.lines.len().saturating_sub(page));
-
             f.render_widget(Paragraph::new(doc.lines.clone()).block(block).scroll((scroll as u16, 0)), body);
             draw_images(f, doc, inner, scroll, picker);
+            for p in &placed {
+                text_sizing::mark_skip(f.buffer_mut(), p);
+            }
 
             let total = doc.lines.len();
             let pct = if total <= page { 100 } else { scroll * 100 / (total - page) };
+            let headings = match (sizing_supported, sizing) {
+                (false, _) => "unsupported",
+                (true, true) => "on",
+                (true, false) => "off",
+            };
             let status_line = Line::from(format!(
-                " {path}  {pct}%  ·  images: {protocol}  ·  j/k ↑/↓ scroll · space/b page · g/G top/bottom · q quit"
+                " {path}  {pct}%  ·  images: {protocol}  ·  sized headings: {headings}  ·  j/k ↑/↓ scroll · space/b page · g/G top/bottom · t sizing · q quit"
             ))
             .style(Style::new().bg(latte::MANTLE).fg(latte::SUBTEXT0));
             f.render_widget(status_line, status);
         })?;
+        text_sizing::draw(&mut std::io::stdout(), &fresh)?;
+        drawn = placed;
 
         match event::read()? {
             Event::Key(k) if k.kind == KeyEventKind::Press => match k.code {
@@ -312,6 +348,10 @@ fn run(
                 KeyCode::Char('b') | KeyCode::PageUp | KeyCode::Char('u') => scroll = scroll.saturating_sub(page),
                 KeyCode::Char('g') | KeyCode::Home => scroll = 0,
                 KeyCode::Char('G') | KeyCode::End => scroll = usize::MAX / 2,
+                KeyCode::Char('t') if sizing_supported => {
+                    sizing = !sizing;
+                    doc = None;
+                }
                 _ => {}
             },
             Event::Mouse(m) => match m.kind {

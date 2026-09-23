@@ -451,6 +451,7 @@ dependencies = [
  "ratatui",
  "ratatui-image",
  "ratatui-markdown",
+ "unicode-width 0.2.0",
 ]
 
 [[package]]
