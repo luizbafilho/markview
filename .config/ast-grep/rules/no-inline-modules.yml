@@ -1,0 +1,21 @@
+id: no-inline-modules
+language: rust
+severity: error
+message: Inline module. Move it to its own file (`foo.rs` or `foo/mod.rs`).
+ignores:
+  - "**/tests/**"
+rule:
+  kind: mod_item
+  has:
+    field: body
+    kind: declaration_list
+  not:
+    follows:
+      kind: attribute_item
+      regex: '^#\[cfg\(test\)\]$'
+      stopBy:
+        not:
+          any:
+            - kind: attribute_item
+            - kind: line_comment
+            - kind: block_comment

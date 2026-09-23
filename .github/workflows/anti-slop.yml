@@ -1,0 +1,24 @@
+name: anti-slop
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --locked --workspace --all-targets -- -D warnings
+      - run: cargo test --locked --workspace --all-targets
+      - name: file size
+        run: bash scripts/check_file_size.sh
+      - name: ast-grep
+        if: hashFiles('.config/ast-grep/rules/**') != ''
+        run: |
+          cargo install ast-grep --locked
+          ast-grep test --config .config/ast-grep/sgconfig.yml
+          ast-grep scan --config .config/ast-grep/sgconfig.yml

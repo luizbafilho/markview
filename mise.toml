@@ -1,2 +1,21 @@
 [tools]
 rust = { version = "1.98.1", profile = "default" }
+ast-grep = "0.45.3"
+
+[tasks.lint-ast]
+description = "ast-grep slop rules (install: mise install, or cargo install ast-grep --locked)"
+run = "ast-grep test --config .config/ast-grep/sgconfig.yml && ast-grep scan --config .config/ast-grep/sgconfig.yml"
+
+[tasks.lint-size]
+description = "Fail on .rs files over 500 lines"
+run = "bash scripts/check_file_size.sh"
+
+[tasks.lint]
+description = "Full anti-slop gate, same as CI"
+run = [
+  "cargo fmt --all -- --check",
+  "cargo clippy --locked --workspace --all-targets -- -D warnings",
+  "cargo test --locked --workspace --all-targets",
+  { task = "lint-size" },
+  { task = "lint-ast" },
+]

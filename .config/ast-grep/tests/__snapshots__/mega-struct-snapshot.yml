@@ -1,0 +1,58 @@
+id: mega-struct
+snapshots:
+  ? |
+    #[derive(Debug)]
+    pub struct Config {
+        /// doc
+        pub a: u8, b: u8, c: u8, d: u8, e: u8, f: u8, g: u8, h: u8,
+        i: u8, j: u8, k: u8, l: u8, m: u8, n: u8, o: u8, p: u8, q: u8, r: u8,
+    }
+  : labels:
+    - source: |-
+        pub struct Config {
+            /// doc
+            pub a: u8, b: u8, c: u8, d: u8, e: u8, f: u8, g: u8, h: u8,
+            i: u8, j: u8, k: u8, l: u8, m: u8, n: u8, o: u8, p: u8, q: u8, r: u8,
+        }
+      style: primary
+      start: 17
+      end: 188
+    - source: 'q: u8'
+      style: secondary
+      start: 173
+      end: 178
+    - source: |-
+        {
+            /// doc
+            pub a: u8, b: u8, c: u8, d: u8, e: u8, f: u8, g: u8, h: u8,
+            i: u8, j: u8, k: u8, l: u8, m: u8, n: u8, o: u8, p: u8, q: u8, r: u8,
+        }
+      style: secondary
+      start: 35
+      end: 188
+  ? |
+    struct Seventeen {
+        a: u8, b: u8, c: u8, d: u8, e: u8, f: u8, g: u8, h: u8,
+        i: u8, j: u8, k: u8, l: u8, m: u8, n: u8, o: u8, p: u8, q: u8,
+    }
+  : labels:
+    - source: |-
+        struct Seventeen {
+            a: u8, b: u8, c: u8, d: u8, e: u8, f: u8, g: u8, h: u8,
+            i: u8, j: u8, k: u8, l: u8, m: u8, n: u8, o: u8, p: u8, q: u8,
+        }
+      style: primary
+      start: 0
+      end: 147
+    - source: 'q: u8'
+      style: secondary
+      start: 139
+      end: 144
+    - source: |-
+        {
+            a: u8, b: u8, c: u8, d: u8, e: u8, f: u8, g: u8, h: u8,
+            i: u8, j: u8, k: u8, l: u8, m: u8, n: u8, o: u8, p: u8, q: u8,
+        }
+      style: secondary
+      start: 17
+      end: 147

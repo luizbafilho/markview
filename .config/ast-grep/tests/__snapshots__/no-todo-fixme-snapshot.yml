@@ -1,0 +1,44 @@
+id: no-todo-fixme
+snapshots:
+  /* HACK */:
+    labels:
+    - source: /* HACK */
+      style: primary
+      start: 0
+      end: 10
+  // FIXME broken on tmux:
+    labels:
+    - source: // FIXME broken on tmux
+      style: primary
+      start: 0
+      end: 23
+  '// TODO: handle resize':
+    labels:
+    - source: '// TODO: handle resize'
+      style: primary
+      start: 0
+      end: 22
+  // Temporary fix until upstream lands:
+    labels:
+    - source: // Temporary fix until upstream lands
+      style: primary
+      start: 0
+      end: 37
+  // XXX:
+    labels:
+    - source: // XXX
+      style: primary
+      start: 0
+      end: 6
+  // hardcoded for now:
+    labels:
+    - source: // hardcoded for now
+      style: primary
+      start: 0
+      end: 20
+  /// Implement later:
+    labels:
+    - source: /// Implement later
+      style: primary
+      start: 0
+      end: 19

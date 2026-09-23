@@ -1,0 +1,13 @@
+id: no-todo-fixme
+valid:
+  - "// Kitty 0.48.2 keeps the lower row occupied."
+  - "/// Returns the todo list for the user."
+  - "fn f() { let todo = 1; }"
+invalid:
+  - "// TODO: handle resize"
+  - "// FIXME broken on tmux"
+  - "/* HACK */"
+  - "// XXX"
+  - "// hardcoded for now"
+  - "// Temporary fix until upstream lands"
+  - "/// Implement later"

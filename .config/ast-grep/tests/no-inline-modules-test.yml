@@ -1,0 +1,25 @@
+id: no-inline-modules
+valid:
+  - mod foo;
+  - pub mod foo;
+  - |
+    #[cfg(test)]
+    mod tests {
+        fn t() {}
+    }
+  - |
+    #[cfg(test)]
+    #[expect(clippy::too_many_lines, reason = "fixtures")]
+    mod tests {
+        fn t() {}
+    }
+invalid:
+  - |
+    mod latte {
+        pub const X: u8 = 1;
+    }
+  - |
+    #[cfg(feature = "x")]
+    pub mod inline {
+        fn f() {}
+    }

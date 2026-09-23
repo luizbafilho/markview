@@ -1,0 +1,11 @@
+id: no-todo-fixme
+language: rust
+severity: error
+message: Placeholder comment. Finish the work or open an issue instead.
+ignores:
+  - "**/tests/**"
+rule:
+  any:
+    - kind: line_comment
+    - kind: block_comment
+  regex: '\b(TODO|FIXME|HACK|XXX)\b|(?i:for now|temporary fix|implement later)'

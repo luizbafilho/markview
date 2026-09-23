@@ -1,0 +1,41 @@
+id: no-inline-modules
+snapshots:
+  ? |
+    #[cfg(feature = "x")]
+    pub mod inline {
+        fn f() {}
+    }
+  : labels:
+    - source: |-
+        pub mod inline {
+            fn f() {}
+        }
+      style: primary
+      start: 22
+      end: 54
+    - source: |-
+        {
+            fn f() {}
+        }
+      style: secondary
+      start: 37
+      end: 54
+  ? |
+    mod latte {
+        pub const X: u8 = 1;
+    }
+  : labels:
+    - source: |-
+        mod latte {
+            pub const X: u8 = 1;
+        }
+      style: primary
+      start: 0
+      end: 38
+    - source: |-
+        {
+            pub const X: u8 = 1;
+        }
+      style: secondary
+      start: 10
+      end: 38

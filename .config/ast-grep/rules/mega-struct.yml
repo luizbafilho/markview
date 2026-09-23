@@ -1,0 +1,27 @@
+id: mega-struct
+language: rust
+severity: warning
+message: Struct has more than 16 fields. Split it, or write down why it can't be split.
+ignores:
+  - "**/tests/**"
+rule:
+  kind: struct_item
+  has:
+    field: body
+    kind: field_declaration_list
+    has:
+      kind: field_declaration
+      nthChild:
+        position: 17
+        ofRule:
+          kind: field_declaration
+  not:
+    follows:
+      kind: attribute_item
+      regex: '^#\[repr\(.*\bC\b.*\)\]$'
+      stopBy:
+        not:
+          any:
+            - kind: attribute_item
+            - kind: line_comment
+            - kind: block_comment

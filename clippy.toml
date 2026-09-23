@@ -1,0 +1,13 @@
+cognitive-complexity-threshold = 25
+too-many-arguments-threshold = 7
+type-complexity-threshold = 250
+trivial-copy-size-limit = 8
+pass-by-value-size-limit = 256
+enum-variant-size-threshold = 200
+avoid-breaking-exported-api = false
+
+# Scoped to #[test] fns and #[cfg(test)] modules only, unlike a crate-level cfg_attr(test, allow).
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-indexing-slicing-in-tests = true
