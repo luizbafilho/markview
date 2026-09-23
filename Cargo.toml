@@ -2,6 +2,8 @@
 name = "ttymark"
 version = "0.1.0"
 edition = "2024"
+repository = "https://github.com/luizbafilho/ttymark"
+publish = false
 
 [dependencies]
 anyhow = "1.0.104"
@@ -84,3 +86,14 @@ cast_possible_truncation = "allow"
 cast_sign_loss = "allow"
 cast_possible_wrap = "allow"
 cast_precision_loss = "allow"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
+
+[package.metadata.dist]
+dist = true
+
+[package.metadata.release]
+pre-release-commit-message = "Release {{crate_name}} {{version}}"

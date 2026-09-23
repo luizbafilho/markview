@@ -1,6 +1,8 @@
 [tools]
 rust = { version = "1.98.1", profile = "default" }
 ast-grep = "0.45.3"
+cargo-dist = "0.33.0"
+cargo-release = "1.1.6"
 
 [tasks.lint-ast]
 description = "ast-grep slop rules (install: mise install, or cargo install ast-grep --locked)"
