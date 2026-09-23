@@ -1,7 +1,5 @@
 //! Sized headings drawn as kitty images, for terminals that forward kitty
-//! graphics but drop OSC 66 (herdr, whose libghostty-vt ignores it).
-
-use std::process::Command;
+//! graphics but drop OSC 66 (Ghostty, and herdr through libghostty-vt).
 
 use ab_glyph::{Font, FontVec, PxScale, ScaleFont, point};
 use anyhow::Context;
@@ -10,10 +8,31 @@ use ratatui::{style::Color, text::Line};
 
 use crate::text_sizing::{self, ROWS};
 
+/// macOS has no fontconfig-style `monospace` alias, so this names Menlo,
+/// the monospace font every Mac ships with.
+#[cfg(target_os = "macos")]
+pub fn load_font() -> anyhow::Result<FontVec> {
+    let mut db = fontdb::Database::new();
+    db.load_system_fonts();
+    let id = db
+        .query(&fontdb::Query {
+            families: &[fontdb::Family::Name("Menlo")],
+            weight: fontdb::Weight::BOLD,
+            ..fontdb::Query::default()
+        })
+        .context("Menlo Bold is not among the system fonts")?;
+    db.with_face_data(id, |data, index| {
+        FontVec::try_from_vec_and_index(data.to_vec(), index)
+    })
+    .context("reading Menlo Bold")?
+    .context("parsing Menlo Bold")
+}
+
 /// The font fontconfig resolves for `monospace:bold`, the closest match to
 /// the bold heading text a terminal would draw.
+#[cfg(not(target_os = "macos"))]
 pub fn load_font() -> anyhow::Result<FontVec> {
-    let out = Command::new("fc-match")
+    let out = std::process::Command::new("fc-match")
         .args(["monospace:bold", "-f", "%{file}"])
         .output()
         .context("running fc-match")?;
