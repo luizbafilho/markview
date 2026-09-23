@@ -185,6 +185,11 @@ fn fraction(level: u8) -> Option<(u16, u16)> {
     }
 }
 
+/// How many cells wide one column of text is drawn at `level`.
+pub fn scale(level: u8) -> f32 {
+    fraction(level).map_or(2.0, |(n, d)| 2.0 * f32::from(n) / f32::from(d))
+}
+
 /// Columns `line` takes once drawn at `level`'s scale.
 fn scaled_width(line: &Line, level: u8) -> u16 {
     line.spans
