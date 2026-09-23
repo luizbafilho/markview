@@ -12,7 +12,10 @@
 </p>
 
 <p align="center">
-  <img src="assets/screenshots/hero.png" alt="markview rendering a launch plan with a large title, a bordered table, a task list and a blockquote" width="880">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/hero-dark.png">
+    <img src="assets/screenshots/hero.png" alt="markview rendering a launch plan with a large title, a bordered table, a task list and a blockquote" width="880">
+  </picture>
 </p>
 
 ```sh
@@ -30,7 +33,10 @@ In kitty 0.40+ markview sizes headings with the [text sizing protocol](https://s
 
 ### Code, highlighted by tree-sitter
 
-<img src="assets/screenshots/code.png" alt="Rust, TypeScript and Bash code blocks with syntax highlighting" width="880">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/code-dark.png">
+  <img src="assets/screenshots/code.png" alt="Rust, TypeScript and Bash code blocks with syntax highlighting" width="880">
+</picture>
 
 Around 35 languages through tree-sitter grammars, colored with the Catppuccin palette.
 
@@ -38,17 +44,29 @@ Around 35 languages through tree-sitter grammars, colored with the Catppuccin pa
 
 Flowcharts, sequence diagrams, Gantt charts and pie charts render straight from the fenced block. No browser, no headless Chrome, no `mmdc`.
 
-<img src="assets/screenshots/flow.png" alt="A Mermaid flowchart with a yes/no decision rendered as boxes and arrows" width="880">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/flow-dark.png">
+  <img src="assets/screenshots/flow.png" alt="A Mermaid flowchart with a yes/no decision rendered as boxes and arrows" width="880">
+</picture>
 
-<img src="assets/screenshots/seq.png" alt="A Mermaid sequence diagram with four participants and request/response arrows" width="880">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/seq-dark.png">
+  <img src="assets/screenshots/seq.png" alt="A Mermaid sequence diagram with four participants and request/response arrows" width="880">
+</picture>
 
-<img src="assets/screenshots/charts.png" alt="A Mermaid Gantt chart and a pie chart rendered as colored bars" width="880">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/charts-dark.png">
+  <img src="assets/screenshots/charts.png" alt="A Mermaid Gantt chart and a pie chart rendered as colored bars" width="880">
+</picture>
 
 Subgraphs, dotted arrows and some of the rarer node shapes are not supported yet.
 
 ### Images, inline
 
-<img src="assets/screenshots/image.png" alt="A landscape photo displayed inline between paragraphs" width="880">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/image-dark.png">
+  <img src="assets/screenshots/image.png" alt="A landscape photo displayed inline between paragraphs" width="880">
+</picture>
 
 PNG, JPEG, WebP and GIF, resolved relative to the Markdown file. markview sends them with the kitty graphics protocol, falling back to Sixel, iTerm2 or colored half blocks depending on what your terminal answers. Images crop cleanly as you scroll past them.
 
