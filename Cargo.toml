@@ -1,8 +1,8 @@
 [package]
-name = "ttymark"
+name = "markview"
 version = "0.2.0"
 edition = "2024"
-repository = "https://github.com/luizbafilho/ttymark"
+repository = "https://github.com/luizbafilho/markview"
 publish = false
 
 [dependencies]

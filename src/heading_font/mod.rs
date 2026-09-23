@@ -1,5 +1,5 @@
-//! Font families for sized headings, read from `TTYMARK_HEADING_FONT` and the
-//! config of the terminal ttymark runs in.
+//! Font families for sized headings, read from `MARKVIEW_HEADING_FONT` and the
+//! config of the terminal markview runs in.
 
 mod ghostty;
 mod kitty;
@@ -27,7 +27,7 @@ pub fn configured() -> anyhow::Result<Families> {
     } else {
         Families::default()
     };
-    Ok(match std::env::var("TTYMARK_HEADING_FONT") {
+    Ok(match std::env::var("MARKVIEW_HEADING_FONT") {
         Ok(heading) if !heading.trim().is_empty() => Families {
             heading: Some(heading),
             ..terminal

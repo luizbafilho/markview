@@ -1,4 +1,4 @@
-<h1 align="center">ttymark</h1>
+<h1 align="center">markview</h1>
 
 <p align="center">
   <b>Read Markdown in your terminal the way it was meant to look.</b><br>
@@ -6,27 +6,27 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/luizbafilho/ttymark/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/luizbafilho/ttymark?style=flat-square&color=8839ef"></a>
+  <a href="https://github.com/luizbafilho/markview/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/luizbafilho/markview?style=flat-square&color=8839ef"></a>
   <img alt="macOS and Linux" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-1e66f5?style=flat-square">
   <img alt="Written in Rust" src="https://img.shields.io/badge/written%20in-Rust-fe640b?style=flat-square">
 </p>
 
 <p align="center">
-  <img src="assets/screenshots/hero.png" alt="ttymark rendering a launch plan with a large title, a bordered table, a task list and a blockquote" width="880">
+  <img src="assets/screenshots/hero.png" alt="markview rendering a launch plan with a large title, a bordered table, a task list and a blockquote" width="880">
 </p>
 
 ```sh
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/luizbafilho/ttymark/releases/latest/download/ttymark-installer.sh | sh
-ttymark README.md
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/luizbafilho/markview/releases/latest/download/markview-installer.sh | sh
+markview README.md
 ```
 
-`cat` shows you pound signs and pipes. `glow` and `mdcat` get you colors. ttymark draws the document: titles at twice the text size, images at full resolution, tables with real borders, and diagrams from your `mermaid` code blocks. It runs inside the terminal you already use, tmux included.
+`cat` shows you pound signs and pipes. `glow` and `mdcat` get you colors. markview draws the document: titles at twice the text size, images at full resolution, tables with real borders, and diagrams from your `mermaid` code blocks. It runs inside the terminal you already use, tmux included.
 
 ## What it renders
 
 ### Headings that are actually bigger, tables with borders
 
-In kitty 0.40+ ttymark sizes headings with the [text sizing protocol](https://sw.kovidgoyal.net/kitty/text-sizing-protocol/). In Ghostty and other terminals with kitty graphics, it draws each heading as an image in the same font your terminal uses, read from your Ghostty or kitty config. Tables get box borders, column alignment, and room for emoji and CJK text. Task lists get checkboxes.
+In kitty 0.40+ markview sizes headings with the [text sizing protocol](https://sw.kovidgoyal.net/kitty/text-sizing-protocol/). In Ghostty and other terminals with kitty graphics, it draws each heading as an image in the same font your terminal uses, read from your Ghostty or kitty config. Tables get box borders, column alignment, and room for emoji and CJK text. Task lists get checkboxes.
 
 ### Code, highlighted by tree-sitter
 
@@ -50,39 +50,39 @@ Subgraphs, dotted arrows and some of the rarer node shapes are not supported yet
 
 <img src="assets/screenshots/image.png" alt="A landscape photo displayed inline between paragraphs" width="880">
 
-PNG, JPEG, WebP and GIF, resolved relative to the Markdown file. ttymark sends them with the kitty graphics protocol, falling back to Sixel, iTerm2 or colored half blocks depending on what your terminal answers. Images crop cleanly as you scroll past them.
+PNG, JPEG, WebP and GIF, resolved relative to the Markdown file. markview sends them with the kitty graphics protocol, falling back to Sixel, iTerm2 or colored half blocks depending on what your terminal answers. Images crop cleanly as you scroll past them.
 
 ### Light or dark, following your terminal
 
-ttymark asks the terminal for its background color. Light backgrounds get [Catppuccin](https://catppuccin.com/palette) Latte, dark ones get Frappé. If you switch your terminal's theme while a document is open, ttymark notices within a second and repaints.
+markview asks the terminal for its background color. Light backgrounds get [Catppuccin](https://catppuccin.com/palette) Latte, dark ones get Frappé. If you switch your terminal's theme while a document is open, markview notices within a second and repaints.
 
 ## Install
 
 **Prebuilt binary** for macOS and Linux, x86_64 and ARM64:
 
 ```sh
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/luizbafilho/ttymark/releases/latest/download/ttymark-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/luizbafilho/markview/releases/latest/download/markview-installer.sh | sh
 ```
 
-The script puts `ttymark` in `~/.cargo/bin`. Archives and checksums are on the [releases page](https://github.com/luizbafilho/ttymark/releases/latest).
+The script puts `markview` in `~/.cargo/bin`. Archives and checksums are on the [releases page](https://github.com/luizbafilho/markview/releases/latest).
 
 **From source**, with a Rust toolchain:
 
 ```sh
-cargo install --locked --git https://github.com/luizbafilho/ttymark
+cargo install --locked --git https://github.com/luizbafilho/markview
 ```
 
 ## Usage
 
 ```sh
-ttymark notes.md
+markview notes.md
 ```
 
 Try it on the bundled tour of everything above:
 
 ```sh
-git clone https://github.com/luizbafilho/ttymark && cd ttymark
-ttymark sample.md
+git clone https://github.com/luizbafilho/markview && cd markview
+markview sample.md
 ```
 
 | Key                        | Action                         |
@@ -98,7 +98,7 @@ The status bar shows which image protocol and heading mode your terminal got.
 
 ## Terminal support
 
-ttymark checks what the terminal can do at startup and uses the best option it finds.
+markview checks what the terminal can do at startup and uses the best option it finds.
 
 | Terminal feature                        | Headings                    | Images                  |
 |-----------------------------------------|-----------------------------|-------------------------|
