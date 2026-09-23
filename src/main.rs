@@ -303,7 +303,7 @@ fn draw_images(
 fn main() -> anyhow::Result<()> {
     let path = std::env::args()
         .nth(1)
-        .context("usage: mkviewer <file.md>")?;
+        .context("usage: ttymark <file.md>")?;
     let md = std::fs::read_to_string(&path).with_context(|| format!("reading {path}"))?;
     let base = Path::new(&path)
         .parent()

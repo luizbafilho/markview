@@ -1,4 +1,4 @@
-# mkviewer sample
+# ttymark sample
 
 A paragraph with **bold**, *italic*, ***bold italic***, ~~strikethrough~~, `inline code`, and a [link](https://example.com).
 This line is long on purpose so you can see how wrapping behaves when the terminal is narrower than the text.
@@ -182,9 +182,9 @@ graph LR
 sequenceDiagram
     participant U as User
     participant T as Terminal
-    participant A as mkviewer
+    participant A as ttymark
     participant L as ratatui-markdown
-    U->>T: run mkviewer sample.md
+    U->>T: run ttymark sample.md
     T->>A: start
     A->>A: query graphics protocol
     A->>L: parse_with_images(md)
@@ -281,7 +281,7 @@ quadrantChart
     mdcat: [0.5, 0.7]
     browser: [0.95, 0.2]
     cat: [0.05, 0.95]
-    mkviewer: [0.7, 0.75]
+    ttymark: [0.7, 0.75]
 ```
 
 ### Block diagram
@@ -336,7 +336,7 @@ export async function load(path: string): Promise<Result<string>> {
 ```
 
 ```json
-{ "name": "mkviewer", "version": "0.1.0", "features": ["images", "mermaid"], "stable": false }
+{ "name": "ttymark", "version": "0.1.0", "features": ["images", "mermaid"], "stable": false }
 ```
 
 ```
