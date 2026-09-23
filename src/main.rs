@@ -40,7 +40,7 @@ use ratatui_markdown::{
     },
     theme::RichTextTheme,
 };
-use terminal_colorsaurus::{QueryOptions, theme_mode};
+use terminal_colorsaurus::{QueryOptions, ThemeMode, theme_mode};
 use theme::Theme;
 
 /// Loads images relative to the markdown file and sizes them using the
@@ -245,8 +245,8 @@ fn main() -> anyhow::Result<()> {
         .to_path_buf();
 
     let mut terminal = ratatui::init();
-    let theme =
-        Theme::new(theme_mode(QueryOptions::default()).context("querying terminal background")?);
+    // mosh, GNU Screen, PuTTY and the Linux console never report their background.
+    let theme = Theme::new(theme_mode(QueryOptions::default()).unwrap_or(ThemeMode::Light));
     let picker = Picker::from_query_stdio().context("querying terminal graphics support")?;
     let sizing = if text_sizing::probe().context("probing text sizing support")? {
         Some(Sizing::Osc66)
@@ -402,9 +402,9 @@ fn run(
             if event::poll(THEME_POLL)? {
                 break Some(event::read()?);
             }
-            let mode =
-                theme_mode(QueryOptions::default()).context("querying terminal background")?;
-            if mode != theme.mode() {
+            if let Ok(mode) = theme_mode(QueryOptions::default())
+                && mode != theme.mode()
+            {
                 theme = Theme::new(mode);
                 doc = None;
                 break None;
@@ -440,8 +440,6 @@ fn run(
 
 #[cfg(test)]
 mod tests {
-    use terminal_colorsaurus::ThemeMode;
-
     use super::*;
 
     #[test]
