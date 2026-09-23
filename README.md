@@ -19,8 +19,7 @@
 </p>
 
 ```sh
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/luizbafilho/markview/releases/latest/download/markview-installer.sh | sh
-markview README.md
+curl https://github.com/luizbafilho/markview/releases/latest/download/markview-installer.sh | sh
 ```
 
 `cat` shows you pound signs and pipes. `glow` and `mdcat` get you colors. markview draws the document: titles at twice the text size, images at full resolution, tables with real borders, and diagrams from your `mermaid` code blocks. It runs inside the terminal you already use, tmux included.
@@ -109,10 +108,7 @@ markview sample.md
 | `space` `d` / `PgDn`       | Page down                      |
 | `b` `u` / `PgUp`           | Page up                        |
 | `g` `G` / `Home` `End`     | Jump to top or bottom          |
-| `t`                        | Toggle large headings          |
 | `q` / `Esc`                | Quit                           |
-
-The status bar shows which image protocol and heading mode your terminal got.
 
 ## Terminal support
 

@@ -285,14 +285,12 @@ fn run(
     base: &Path,
     mut theme: Theme,
     picker: &Picker,
-    sizing_mode: Option<&Sizing>,
+    sizing: Option<&Sizing>,
 ) -> anyhow::Result<()> {
     let mut scroll: usize = 0;
     let mut doc: Option<Doc> = None;
     let mut page: usize;
-    let protocol = format!("{:?}", picker.protocol_type());
     let tmux = std::env::var_os("TMUX").is_some();
-    let mut sizing = true;
     let mut drawn: Vec<text_sizing::Placed> = Vec::new();
 
     loop {
@@ -310,14 +308,7 @@ fn run(
                 if stale.is_some() {
                     drawn.clear();
                 }
-                let d = render(
-                    md,
-                    base,
-                    inner,
-                    &theme,
-                    picker.font_size(),
-                    sizing_mode.filter(|_| sizing),
-                )?;
+                let d = render(md, base, inner, &theme, picker.font_size(), sizing)?;
                 if picker.protocol_type() == ProtocolType::Kitty {
                     let mut out = std::io::stdout().lock();
                     for (i, p) in d.images.iter().enumerate() {
@@ -377,22 +368,25 @@ fn run(
         text_sizing::erase(&mut std::io::stdout(), &gone)?;
 
         terminal.try_draw(|f| {
-            f.render_widget(Paragraph::new(d.lines.clone()).block(block).scroll((scroll as u16, 0)), body);
+            f.render_widget(
+                Paragraph::new(d.lines.clone())
+                    .block(block)
+                    .scroll((scroll as u16, 0)),
+                body,
+            );
             draw_images(f, d, inner, scroll, picker).map_err(std::io::Error::other)?;
             for p in &placed {
                 text_sizing::mark_skip(f.buffer_mut(), p);
             }
 
             let total = d.lines.len();
-            let pct = if total <= page { 100 } else { scroll * 100 / (total - page) };
-            let headings = match (sizing_mode, sizing) {
-                (None, _) => "unsupported",
-                (Some(_), false) => "off",
-                (Some(Sizing::Osc66), true) => "on",
-                (Some(Sizing::Image(_)), true) => "image",
+            let pct = if total <= page {
+                100
+            } else {
+                scroll * 100 / (total - page)
             };
             let status_line = Line::from(format!(
-                " {path}  {pct}%  ·  images: {protocol}  ·  sized headings: {headings}  ·  j/k ↑/↓ scroll · space/b page · g/G top/bottom · t sizing · q quit"
+                " {path}  {pct}%  ·  j/k ↑/↓ scroll · space/b page · g/G top/bottom · q quit"
             ))
             .style(theme.bar_style());
             f.render_widget(status_line, status);
@@ -425,10 +419,6 @@ fn run(
                 }
                 KeyCode::Char('g') | KeyCode::Home => scroll = 0,
                 KeyCode::Char('G') | KeyCode::End => scroll = usize::MAX / 2,
-                KeyCode::Char('t') if sizing_mode.is_some() => {
-                    sizing = !sizing;
-                    doc = None;
-                }
                 _ => {}
             },
             Event::Mouse(m) => match m.kind {
