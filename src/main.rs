@@ -163,8 +163,13 @@ struct Doc {
     lines: Vec<Line<'static>>,
     images: Vec<ImagePlacement>,
     headings: Vec<text_sizing::Heading>,
+    rules: Vec<usize>,
     /// Non-kitty protocols, per image: (rows cut off the top, visible rows, encoded protocol).
     encoded: HashMap<usize, (u16, u16, Protocol)>,
+}
+
+fn rule_style() -> Style {
+    Style::new().bg(latte::BASE).fg(latte::SURFACE0)
 }
 
 fn kitty_id(image_index: usize) -> u32 {
@@ -182,17 +187,16 @@ fn render(md: &str, base: &Path, area: Rect, theme: &Latte, cell_px: (u16, u16),
         fallback_color: theme.get_muted_text_color(),
     };
     let (mut blocks, resolved) = renderer.parse_with_images(md, &mut resolver);
-    if sized_headings {
-        text_sizing::tag(&mut blocks);
-    }
+    text_sizing::tag(&mut blocks);
     let max_img_h = area.height.saturating_sub(2).max(1);
     let mut out = renderer.render_full(&blocks, theme, &resolved, &mut resolver, area.width, max_img_h);
-    let headings = text_sizing::extract(&mut out.lines, &mut out.images);
+    let (headings, rules) = text_sizing::extract(&mut out.lines, &mut out.images, sized_headings, area.width, rule_style());
     Doc {
         size: (area.width, area.height),
         lines: out.lines,
         images: out.images,
         headings,
+        rules,
         encoded: HashMap::new(),
     }
 }
@@ -285,6 +289,10 @@ fn run(
             .style(Style::new().bg(latte::BASE).fg(latte::TEXT));
         let inner = block.inner(body);
 
+        // ratatui clears the whole screen on resize, taking every sized heading with it.
+        if doc.as_ref().is_some_and(|d| d.size != (inner.width, inner.height)) {
+            drawn.clear();
+        }
         if doc.as_ref().map(|d| d.size) != Some((inner.width, inner.height)) {
             let d = render(md, base, inner, theme, picker.font_size(), sizing);
             if picker.protocol_type() == ProtocolType::Kitty {
@@ -301,7 +309,7 @@ fn run(
         let d = doc.as_ref().unwrap();
         page = inner.height.max(1) as usize;
         scroll = scroll.min(d.lines.len().saturating_sub(page));
-        let placed: Vec<text_sizing::Placed> = d
+        let mut placed: Vec<text_sizing::Placed> = d
             .headings
             .iter()
             .filter(|h| h.row >= scroll && h.row - scroll + text_sizing::ROWS as usize <= inner.height as usize)
@@ -311,6 +319,13 @@ fn run(
                 text_sizing::place(&d.lines[h.row], h.level, inner.x, y, inner.width, base)
             })
             .collect();
+        placed.extend(
+            d.rules
+                .iter()
+                .copied()
+                .filter(|&r| r >= scroll && r - scroll < inner.height as usize)
+                .map(|r| text_sizing::rule(inner.x, inner.y + (r - scroll) as u16, inner.width, rule_style())),
+        );
         let gone: Vec<_> = drawn.iter().filter(|p| !placed.contains(p)).cloned().collect();
         let fresh: Vec<_> = placed.iter().filter(|p| !drawn.contains(p)).cloned().collect();
         text_sizing::erase(&mut std::io::stdout(), &gone)?;
