@@ -28,6 +28,7 @@ use ratatui_image::{
     protocol::Protocol,
 };
 
+mod heading_font;
 mod heading_image;
 mod kitty;
 mod text_sizing;
@@ -98,7 +99,7 @@ fn kitty_id(image_index: usize) -> u32 {
 
 enum Sizing {
     Osc66,
-    Image(ab_glyph::FontVec),
+    Image(heading_image::HeadingFont),
 }
 
 fn render(
@@ -251,7 +252,9 @@ fn main() -> anyhow::Result<()> {
     let sizing = if text_sizing::probe().context("probing text sizing support")? {
         Some(Sizing::Osc66)
     } else if picker.protocol_type() == ProtocolType::Kitty {
-        Some(Sizing::Image(heading_image::load_font()?))
+        Some(Sizing::Image(heading_image::HeadingFont::load(
+            &heading_font::configured()?,
+        )?))
     } else {
         None
     };
@@ -444,7 +447,9 @@ mod tests {
 
     #[test]
     fn image_headings_are_drawn_in_the_current_themes_colors() {
-        let sizing = Sizing::Image(heading_image::load_font().unwrap());
+        let sizing = Sizing::Image(
+            heading_image::HeadingFont::load(&heading_font::Families::default()).unwrap(),
+        );
         let area = Rect::new(0, 0, 80, 40);
         for mode in [ThemeMode::Light, ThemeMode::Dark] {
             let theme = Theme::new(mode);

@@ -2,49 +2,43 @@
 //! graphics but drop OSC 66 (Ghostty, and herdr through libghostty-vt).
 
 use ab_glyph::{Font, FontVec, PxScale, ScaleFont, point};
-use anyhow::Context;
 use image::{DynamicImage, Rgba, RgbaImage};
 use ratatui::{style::Color, text::Line};
 
-use crate::text_sizing::{self, ROWS};
+use crate::{
+    heading_font::{Families, load_font},
+    text_sizing::{self, ROWS},
+};
 
-/// macOS has no fontconfig-style `monospace` alias, so this names Menlo,
-/// the monospace font every Mac ships with.
-#[cfg(target_os = "macos")]
-pub fn load_font() -> anyhow::Result<FontVec> {
-    let mut db = fontdb::Database::new();
-    db.load_system_fonts();
-    let id = db
-        .query(&fontdb::Query {
-            families: &[fontdb::Family::Name("Menlo")],
-            weight: fontdb::Weight::BOLD,
-            ..fontdb::Query::default()
-        })
-        .context("Menlo Bold is not among the system fonts")?;
-    db.with_face_data(id, |data, index| {
-        FontVec::try_from_vec_and_index(data.to_vec(), index)
-    })
-    .context("reading Menlo Bold")?
-    .context("parsing Menlo Bold")
+#[derive(Debug)]
+pub struct HeadingFont {
+    face: FontVec,
+    /// Width of the terminal font's `M` in ems; the cell width divided by it
+    /// is the terminal's font size in pixels.
+    terminal_advance: f32,
 }
 
-/// The font fontconfig resolves for `monospace:bold`, the closest match to
-/// the bold heading text a terminal would draw.
-#[cfg(not(target_os = "macos"))]
-pub fn load_font() -> anyhow::Result<FontVec> {
-    let out = std::process::Command::new("fc-match")
-        .args(["monospace:bold", "-f", "%{file}"])
-        .output()
-        .context("running fc-match")?;
-    let path = String::from_utf8(out.stdout).context("fc-match printed a non-UTF-8 path")?;
-    let data = std::fs::read(path.trim()).with_context(|| format!("reading font {path}"))?;
-    FontVec::try_from_vec(data).with_context(|| format!("parsing font {path}"))
+impl HeadingFont {
+    pub fn load(families: &Families) -> anyhow::Result<Self> {
+        let terminal = load_font(families.terminal.as_deref())?;
+        let terminal_advance = terminal
+            .as_scaled(PxScale::from(1.0))
+            .h_advance(terminal.glyph_id('M'));
+        let face = match families.heading.as_deref() {
+            Some(heading) => load_font(Some(heading))?,
+            None => terminal,
+        };
+        Ok(Self {
+            face,
+            terminal_advance,
+        })
+    }
 }
 
 /// Draws `line` at `level`'s scale, vertically centred in a `ROWS`-high
 /// image no wider than `max_cols` cells. Returns the image and its width in cells.
 pub fn rasterize(
-    font: &FontVec,
+    heading: &HeadingFont,
     line: &Line,
     level: u8,
     cell_px: (u16, u16),
@@ -59,10 +53,11 @@ pub fn rasterize(
         glyphs.extend(s.content.chars().map(|c| (c, color)));
     }
 
-    // Size the font so one monospace advance spans `scale` cells, then
-    // shrink it if the whole line would not fit.
+    // Scale the terminal's font size by the heading level, then shrink it if
+    // the whole line would not fit.
+    let font = &heading.face;
     let unit = font.as_scaled(PxScale::from(1.0));
-    let one_cell = cw * text_sizing::scale(level) / unit.h_advance(font.glyph_id('M'));
+    let one_cell = cw * text_sizing::scale(level) / heading.terminal_advance;
     let unit_width: f32 = glyphs
         .iter()
         .map(|&(c, _)| unit.h_advance(font.glyph_id(c)))
@@ -125,7 +120,7 @@ mod tests {
 
     #[test]
     fn h1_fills_two_rows_at_about_twice_the_text_width() {
-        let font = load_font().unwrap();
+        let font = HeadingFont::load(&Families::default()).unwrap();
         let (img, cols) =
             rasterize(&font, &Line::from("Claude Code"), 1, CELL, 80, FG, BG).unwrap();
 
@@ -144,7 +139,7 @@ mod tests {
 
     #[test]
     fn heading_wider_than_max_cols_is_shrunk_to_fit() {
-        let font = load_font().unwrap();
+        let font = HeadingFont::load(&Families::default()).unwrap();
         let (img, cols) = rasterize(
             &font,
             &Line::from("A heading that is far too long"),
@@ -162,7 +157,7 @@ mod tests {
 
     #[test]
     fn smaller_levels_take_fewer_cells() {
-        let font = load_font().unwrap();
+        let font = HeadingFont::load(&Families::default()).unwrap();
         let widths: Vec<u16> = (1..=3)
             .map(|l| {
                 rasterize(&font, &Line::from("Heading"), l, CELL, 80, FG, BG)
