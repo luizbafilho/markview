@@ -1,0 +1,264 @@
+#!/usr/bin/env bash
+# Drives markview in kitty or Ghostty on a private headless Hyprland output.
+# Usage: mv-verify <command> [run-id] [args...]; run `mv-verify help` for the list.
+set -euo pipefail
+
+REPO="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
+BIN="$REPO/target/debug/markview"
+RUNTIME="${XDG_RUNTIME_DIR:-/tmp}/mv-verify"
+OUTPUT_MODE="1920x1080"
+# A blank terminal has a handful of colors; any rendered markview screen has hundreds.
+MIN_RENDERED_COLORS=50
+
+die() { printf 'mv-verify: %s\n' "$*" >&2; exit 1; }
+need_run() { [[ "${1:-}" =~ ^[a-z0-9-]+$ ]] || die "run id must match [a-z0-9-]+, got '${1:-}'"; }
+evidence() { printf '%s/target/verify/%s' "$REPO" "$1"; }
+sock() { printf 'unix:%s/%s.sock' "$RUNTIME" "$1"; }
+name() { printf 'mv-verify-%s' "$1"; }
+terminal() { cat "$(evidence "$1")/terminal"; }
+rc() { kitty @ --to "$(sock "$1")" "${@:2}"; }
+monitor() { hyprctl monitors -j | jq -c --arg n "$(name "$1")" '.[] | select(.name==$n)'; }
+client() {
+  local pid; pid="$(cat "$RUNTIME/$1.pid")"
+  hyprctl clients -j | jq -c --argjson p "$pid" '.[] | select(.pid==$p)'
+}
+need_kitty() { [[ "$(terminal "$1")" == kitty ]] || die "run $1 uses $(terminal "$1"), which has no screen text or remote control; use key, settle and shot"; }
+
+usage() {
+  cat <<'EOF'
+mv-verify build                         cargo build --locked, print the binary path
+mv-verify launch <run> <file.md> [--ghostty] [--light] [--env=KEY=VALUE ...]
+                                        create a hidden 1920x1080 output, open a fullscreen terminal on it running
+                                        markview, and wait until it has drawn. kitty by default; --ghostty uses
+                                        Ghostty (screenshot-only).
+                                        --light starts the terminal with a Latte background. --env sets a variable
+                                        for the terminal and markview (Hyprland starts them, not this shell)
+mv-verify doctor <run>                  read-only health report for the run
+mv-verify key <run> <keysym> [mods]     press a key in the run's window (any terminal) and wait for the screen to
+                                        settle; prints changed or unchanged. keysyms: j k g space Return Escape
+                                        Next Prior Home End Down Up; capitals as `g SHIFT`
+mv-verify settle <run>                  wait until three screenshots in a row are identical
+mv-verify shot <run> <name>             save a screenshot of the window to target/verify/<run>/<name>.png
+mv-verify kitty <run> <kitty @ args...> kitty only: raw kitty remote control against the run's window
+mv-verify wait <run> <regex> [secs]     kitty only: poll the screen text until it matches (default 10s)
+mv-verify text <run> <name>             kitty only: save the screen text to target/verify/<run>/<name>.txt
+mv-verify cleanup <run>                 kill the run's terminal, remove its output, keep evidence
+EOF
+}
+
+grab() {
+  local geom; geom="$(client "$1" | jq -r '"\(.at[0]),\(.at[1]) \(.size[0])x\(.size[1])"')"
+  [[ -n "$geom" ]] || die "no window for run $1"
+  grim -g "$geom" "$2"
+}
+
+settle_until() {
+  local run="$1" secs="$2" min_colors="$3" prev cur
+  prev="$(mktemp --suffix .png)"; cur="$(mktemp --suffix .png)"
+  grab "$run" "$prev"
+  local deadline=$((SECONDS + secs)) stable=0
+  while (( SECONDS < deadline )); do
+    sleep 0.3
+    grab "$run" "$cur"
+    if cmp -s "$prev" "$cur"; then stable=$((stable + 1)); else stable=0; fi
+    # Three identical frames in a row, so a pause while an image decodes is not taken as done.
+    if (( stable >= 2 )) && (( $(magick "$cur" -format '%k' info:) > min_colors )); then
+      rm -f "$prev" "$cur"; return 0
+    fi
+    mv "$cur" "$prev"
+  done
+  rm -f "$prev" "$cur"
+  die "screen of run $run did not settle within ${secs}s"
+}
+
+cmd_build() {
+  cargo build --locked --manifest-path "$REPO/Cargo.toml" >&2
+  printf '%s\n' "$BIN"
+}
+
+cmd_launch() {
+  local run="${1:-}" file="${2:-}"
+  need_run "$run"
+  [[ -n "$file" ]] || die "missing markdown file"
+  [[ -x "$BIN" ]] || die "no binary at $BIN, run: mv-verify build"
+  [[ ! -e "$RUNTIME/$run.pid" && -z "$(monitor "$run")" ]] || die "run $run already exists, clean it up or pick a new id"
+  local out; out="$(evidence "$run")"
+  mkdir -p "$out" "$RUNTIME"
+  file="$(realpath "$file")"
+
+  local inner="\"$BIN\" \"$(basename "$file")\"; code=\$?; echo \$code > \"$out/exit-code\"; echo \"markview exited \$code\"; exec sleep infinity"
+  local -a argv=(sh -c "$inner")
+  local term=kitty light=false
+  local -a envs=()
+  for flag in "${@:3}"; do
+    case "$flag" in
+      --env=*=*) envs+=("${flag#--env=}") ;;
+      --ghostty) term=ghostty ;;
+      --light) light=true ;;
+      *) die "unknown launch flag $flag" ;;
+    esac
+  done
+
+  local -a term_argv
+  case "$term" in
+    kitty)
+      term_argv=(kitty --class "$(name "$run")"
+        -o allow_remote_control=socket-only --listen-on "$(sock "$run")" --directory "$(dirname "$file")")
+      [[ "$light" == false ]] || term_argv+=(-o background=#eff1f5 -o foreground=#4c4f69)
+      term_argv+=("${argv[@]}")
+      ;;
+    ghostty)
+      # Without single-instance off, the launch is handed to the user's running Ghostty process.
+      term_argv=(ghostty --gtk-single-instance=false --class="dev.markview.verify.${run//-/_}"
+        --working-directory="$(dirname "$file")")
+      [[ "$light" == false ]] || term_argv+=(--background=#eff1f5 --foreground=#4c4f69)
+      term_argv+=(-e "${argv[@]}")
+      ;;
+  esac
+
+  # Left of every real monitor with a gap, so the pointer can never reach it.
+  local x; x="$(hyprctl monitors -j | jq '[.[].x] | min - 5000')"
+  hyprctl output create headless "$(name "$run")" >/dev/null
+  hyprctl eval "hl.monitor({ output = \"$(name "$run")\", mode = \"$OUTPUT_MODE\", position = \"${x}x-20000\", scale = 1 })" >/dev/null
+  local ws; ws="$(monitor "$run" | jq -r '.activeWorkspace.id')"
+  [[ "$ws" =~ ^[0-9]+$ ]] || die "headless output $(name "$run") has no workspace"
+
+  printf '#!/usr/bin/env bash\necho $$ > %q\nexec %s >%q 2>&1\n' \
+    "$RUNTIME/$run.pid" "$(printf '%q ' env "${envs[@]}" "${term_argv[@]}")" "$out/terminal.log" > "$out/launch.sh"
+  printf '%s\n' "$term" > "$out/terminal"
+  git -C "$REPO" describe --always --dirty > "$out/build-rev"
+  hyprctl dispatch "hl.dsp.exec_cmd(\"bash $out/launch.sh\", { workspace = \"$ws silent\", fullscreen = true })" >/dev/null
+
+  if [[ "$term" == kitty ]]; then
+    cmd_wait "$run" "^ $(basename "$file")  [0-9]+%" 15 >/dev/null
+  else
+    local deadline=$((SECONDS + 15))
+    until [[ -f "$RUNTIME/$run.pid" && -n "$(client "$run")" ]]; do
+      (( SECONDS < deadline )) || die "ghostty window for run $run never appeared, see $out/terminal.log"
+      sleep 0.2
+    done
+    settle_until "$run" 15 "$MIN_RENDERED_COLORS"
+  fi
+  printf 'ready: run=%s terminal=%s output=%s evidence=%s\n' "$run" "$term" "$(name "$run")" "$out"
+}
+
+cmd_doctor() {
+  local run="${1:-}"; need_run "$run"
+  local pidfile="$RUNTIME/$run.pid" out; out="$(evidence "$run")"
+  [[ -f "$pidfile" ]] || die "run $run was never launched"
+  local pid; pid="$(cat "$pidfile")"
+  if kill -0 "$pid" 2>/dev/null; then echo "$(terminal "$run"): pid $pid alive"; else echo "$(terminal "$run"): pid $pid GONE"; return 1; fi
+  echo "output: $(monitor "$run" | jq -r '"\(.name) \(.width)x\(.height) at \(.x),\(.y), workspace \(.activeWorkspace.id)"')"
+  if [[ "$(client "$run" | jq -r '.monitor')" == "$(monitor "$run" | jq -r '.id')" ]]; then
+    echo "window: $(client "$run" | jq -r '"\(.address) class \(.class)"') on the hidden output"
+  else
+    echo "window: NOT on the hidden output"
+  fi
+  if [[ "$(terminal "$run")" == kitty ]]; then
+    rc "$run" ls >/dev/null && echo "remote control: $(sock "$run") answers"
+    echo "terminal size: $(rc "$run" ls | jq -r '.[0].tabs[0].windows[0] | "\(.columns)x\(.lines) cells"')"
+  fi
+  local sh; sh="$(pgrep -P "$pid" -x sh | head -1)"
+  echo "process: $(ps -o args= --ppid "$sh" | tr '\n' ' ')"
+  if [[ -f "$out/exit-code" ]]; then echo "markview: exited $(cat "$out/exit-code")"; else echo "markview: running"; fi
+  echo "build: launched at $(cat "$out/build-rev"), checkout now $(git -C "$REPO" describe --always --dirty)"
+  local newest; newest="$(find "$REPO/src" -name '*.rs' -newer "$BIN" | head -1)"
+  if [[ -n "$newest" ]]; then echo "binary: STALE, $newest is newer than $BIN"; else echo "binary: up to date with src/"; fi
+}
+
+cmd_key() {
+  local run="${1:-}" key="${2:-}" mods="${3:-}"
+  need_run "$run"; [[ -n "$key" ]] || die "missing keysym"
+  local addr; addr="$(client "$run" | jq -r '.address')"
+  [[ -n "$addr" ]] || die "no window for run $run"
+  local before cur; before="$(mktemp --suffix .png)"; cur="$(mktemp --suffix .png)"
+  grab "$run" "$before"
+  # An explicit window makes Hyprland error on a bad target instead of typing into the focused window.
+  hyprctl dispatch "hl.dsp.send_shortcut({ mods = \"$mods\", key = \"$key\", window = \"address:$addr\" })" >/dev/null
+  local deadline=$((SECONDS + 3)) changed=unchanged
+  while (( SECONDS < deadline )); do
+    sleep 0.2
+    grab "$run" "$cur"
+    if ! cmp -s "$before" "$cur"; then changed=changed; break; fi
+  done
+  rm -f "$before" "$cur"
+  [[ "$changed" == unchanged ]] || settle_until "$run" 10 0
+  echo "$changed"
+}
+
+cmd_settle() {
+  local run="${1:-}"; need_run "$run"
+  settle_until "$run" 10 0
+  echo settled
+}
+
+cmd_kitty() {
+  local run="${1:-}"; need_run "$run"; need_kitty "$run"
+  rc "$run" "${@:2}"
+}
+
+cmd_wait() {
+  local run="${1:-}" pattern="${2:-}" secs="${3:-10}"
+  need_run "$run"; need_kitty "$run"
+  [[ -n "$pattern" ]] || die "missing regex"
+  local deadline=$((SECONDS + secs)) screen=""
+  while (( SECONDS < deadline )); do
+    screen="$(rc "$run" get-text 2>/dev/null || true)"
+    if grep -Eq -- "$pattern" <<<"$screen"; then
+      grep -E -- "$pattern" <<<"$screen"
+      return 0
+    fi
+    sleep 0.3
+  done
+  printf '%s\n' "$screen" >&2
+  die "timed out after ${secs}s waiting for /$pattern/"
+}
+
+cmd_text() {
+  local run="${1:-}" name="${2:-}"
+  need_run "$run"; need_kitty "$run"; [[ -n "$name" ]] || die "missing artifact name"
+  local path; path="$(evidence "$run")/$name.txt"
+  rc "$run" get-text > "$path"
+  cat "$path"
+}
+
+cmd_shot() {
+  local run="${1:-}" name="${2:-}"
+  need_run "$run"; [[ -n "$name" ]] || die "missing artifact name"
+  local path; path="$(evidence "$run")/$name.png"
+  grab "$run" "$path"
+  printf '%s\n' "$path"
+}
+
+cmd_cleanup() {
+  local run="${1:-}"; need_run "$run"
+  local pidfile="$RUNTIME/$run.pid"
+  if [[ -f "$pidfile" ]]; then
+    local pid; pid="$(cat "$pidfile")"
+    kill "$pid" 2>/dev/null || true
+    local deadline=$((SECONDS + 5))
+    while kill -0 "$pid" 2>/dev/null; do
+      (( SECONDS < deadline )) || die "terminal pid $pid did not exit, pidfile kept at $pidfile"
+      sleep 0.2
+    done
+    rm -f "$pidfile"
+  fi
+  if [[ -n "$(monitor "$run")" ]]; then hyprctl output remove "$(name "$run")" >/dev/null; fi
+  rm -f "$RUNTIME/$run.sock"
+  printf 'cleaned run %s, evidence kept in %s\n' "$run" "$(evidence "$run")"
+}
+
+case "${1:-help}" in
+  build) cmd_build ;;
+  launch) cmd_launch "${@:2}" ;;
+  doctor) cmd_doctor "${@:2}" ;;
+  key) cmd_key "${@:2}" ;;
+  settle) cmd_settle "${@:2}" ;;
+  kitty) cmd_kitty "${@:2}" ;;
+  wait) cmd_wait "${@:2}" ;;
+  text) cmd_text "${@:2}" ;;
+  shot) cmd_shot "${@:2}" ;;
+  cleanup) cmd_cleanup "${@:2}" ;;
+  help | -h | --help) usage ;;
+  *) usage >&2; exit 2 ;;
+esac
