@@ -10,13 +10,7 @@ use anyhow::Context;
 use image::DynamicImage;
 use ratatui::{
     Frame,
-    crossterm::{
-        event::{
-            self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind,
-            MouseEventKind,
-        },
-        execute,
-    },
+    crossterm::event::{self, Event, KeyCode, KeyEventKind},
     layout::{Constraint, Layout, Position, Rect},
     style::{Color, Style, Stylize},
     text::{Line, Span},
@@ -259,7 +253,6 @@ fn main() -> anyhow::Result<()> {
         None
     };
     terminal.clear()?;
-    execute!(std::io::stdout(), EnableMouseCapture)?;
     let result = run(
         &mut terminal,
         &path,
@@ -272,7 +265,6 @@ fn main() -> anyhow::Result<()> {
     if picker.protocol_type() == ProtocolType::Kitty {
         std::io::stdout().write_all(kitty::DELETE_ALL.as_bytes())?;
     }
-    execute!(std::io::stdout(), DisableMouseCapture)?;
     ratatui::restore();
     result
 }
@@ -412,11 +404,6 @@ fn run(
                 }
                 KeyCode::Char('g') | KeyCode::Home => scroll = 0,
                 KeyCode::Char('G') | KeyCode::End => scroll = usize::MAX / 2,
-                _ => {}
-            },
-            Event::Mouse(m) => match m.kind {
-                MouseEventKind::ScrollDown => scroll += 3,
-                MouseEventKind::ScrollUp => scroll = scroll.saturating_sub(3),
                 _ => {}
             },
             _ => {}
