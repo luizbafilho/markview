@@ -19,7 +19,7 @@
 </p>
 
 ```sh
-curl https://github.com/luizbafilho/markview/releases/latest/download/markview-installer.sh | sh
+curl -LsSf https://github.com/luizbafilho/markview/releases/latest/download/markview-installer.sh | sh
 ```
 
 `cat` shows you pound signs and pipes. `glow` and `mdcat` get you colors. markview draws the document: titles at twice the text size, images at full resolution, tables with real borders, and diagrams from your `mermaid` code blocks. It runs inside the terminal you already use.
@@ -78,10 +78,10 @@ markview asks the terminal for its background color. Light backgrounds get [Catp
 **Prebuilt binary** for macOS and Linux, x86_64 and ARM64:
 
 ```sh
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/luizbafilho/markview/releases/latest/download/markview-installer.sh | sh
+curl -LsSf https://github.com/luizbafilho/markview/releases/latest/download/markview-installer.sh | sh
 ```
 
-The script puts `markview` in `~/.cargo/bin`. Archives and checksums are on the [releases page](https://github.com/luizbafilho/markview/releases/latest).
+The script puts `markview` in `~/.local/bin`. Archives and checksums are on the [releases page](https://github.com/luizbafilho/markview/releases/latest).
 
 **From source**, with a Rust toolchain:
 
