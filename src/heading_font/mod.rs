@@ -19,7 +19,6 @@ pub struct Families {
 }
 
 pub fn configured() -> anyhow::Result<Families> {
-    // Both variables are inherited by tmux panes, unlike TERM and TERM_PROGRAM.
     let terminal = if std::env::var_os("KITTY_WINDOW_ID").is_some() {
         kitty::families()?
     } else if std::env::var_os("GHOSTTY_RESOURCES_DIR").is_some() {

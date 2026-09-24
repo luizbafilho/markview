@@ -13,24 +13,13 @@ use ratatui::style::Color;
 
 const PLACEHOLDER: char = '\u{10EEEE}';
 
-pub fn transmit(
-    img: &DynamicImage,
-    id: u32,
-    cols: u16,
-    rows: u16,
-    tmux: bool,
-) -> Result<String, fmt::Error> {
-    let (start, esc, end) = if tmux {
-        ("\x1bPtmux;", "\x1b\x1b", "\x1b\\")
-    } else {
-        ("", "\x1b", "")
-    };
+pub fn transmit(img: &DynamicImage, id: u32, cols: u16, rows: u16) -> Result<String, fmt::Error> {
     let rgba = img.to_rgba8();
     // The protocol caps each chunk at 4096 base64 characters.
     let chunks: Vec<&[u8]> = rgba.as_raw().chunks(3072).collect();
-    let mut out = String::from(start);
+    let mut out = String::new();
     for (i, chunk) in chunks.iter().enumerate() {
-        write!(out, "{esc}_Gq=2,")?;
+        out.push_str("\x1b_Gq=2,");
         if i == 0 {
             write!(
                 out,
@@ -41,21 +30,13 @@ pub fn transmit(
         }
         let more = u8::from(i + 1 < chunks.len());
         let data = base64_simd::STANDARD.encode_to_string(chunk);
-        write!(out, "m={more};{data}{esc}\\")?;
+        write!(out, "m={more};{data}\x1b\\")?;
     }
-    out.push_str(end);
     Ok(out)
 }
 
 /// Deletes every image this process transmitted.
-pub fn delete_all(tmux: bool) -> String {
-    let (start, esc, end) = if tmux {
-        ("\x1bPtmux;", "\x1b\x1b", "\x1b\\")
-    } else {
-        ("", "\x1b", "")
-    };
-    format!("{start}{esc}_Gq=2,a=d,d=A{esc}\\{end}")
-}
+pub const DELETE_ALL: &str = "\x1b_Gq=2,a=d,d=A\x1b\\";
 
 /// `None` when `row` or `col` is past [`MAX_CELLS`].
 pub fn cell(row: u16, col: u16) -> Option<String> {

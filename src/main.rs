@@ -270,8 +270,7 @@ fn main() -> anyhow::Result<()> {
         sizing.as_ref(),
     );
     if picker.protocol_type() == ProtocolType::Kitty {
-        std::io::stdout()
-            .write_all(kitty::delete_all(std::env::var_os("TMUX").is_some()).as_bytes())?;
+        std::io::stdout().write_all(kitty::DELETE_ALL.as_bytes())?;
     }
     execute!(std::io::stdout(), DisableMouseCapture)?;
     ratatui::restore();
@@ -290,7 +289,6 @@ fn run(
     let mut scroll: usize = 0;
     let mut doc: Option<Doc> = None;
     let mut page: usize;
-    let tmux = std::env::var_os("TMUX").is_some();
     let mut drawn: Vec<text_sizing::Placed> = Vec::new();
 
     loop {
@@ -312,13 +310,8 @@ fn run(
                 if picker.protocol_type() == ProtocolType::Kitty {
                     let mut out = std::io::stdout().lock();
                     for (i, p) in d.images.iter().enumerate() {
-                        let data = kitty::transmit(
-                            &p.image,
-                            kitty_id(i),
-                            p.width_cells,
-                            p.height_cells,
-                            tmux,
-                        )?;
+                        let data =
+                            kitty::transmit(&p.image, kitty_id(i), p.width_cells, p.height_cells)?;
                         out.write_all(data.as_bytes())?;
                     }
                     out.flush()?;

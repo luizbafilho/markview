@@ -22,7 +22,7 @@
 curl https://github.com/luizbafilho/markview/releases/latest/download/markview-installer.sh | sh
 ```
 
-`cat` shows you pound signs and pipes. `glow` and `mdcat` get you colors. markview draws the document: titles at twice the text size, images at full resolution, tables with real borders, and diagrams from your `mermaid` code blocks. It runs inside the terminal you already use, tmux included.
+`cat` shows you pound signs and pipes. `glow` and `mdcat` get you colors. markview draws the document: titles at twice the text size, images at full resolution, tables with real borders, and diagrams from your `mermaid` code blocks. It runs inside the terminal you already use.
 
 ## What it renders
 
@@ -121,11 +121,7 @@ markview checks what the terminal can do at startup and uses the best option it 
 | Sixel or iTerm2 images                  | Regular bold headings       | Sixel or iTerm2         |
 | Anything else                           | Regular bold headings       | Colored half blocks     |
 
-Inside tmux, turn on passthrough so image escapes reach the outer terminal:
-
-```tmux
-set -g allow-passthrough on
-```
+tmux is not supported. Run markview directly in your terminal.
 
 ## Built on
 
