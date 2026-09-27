@@ -10,11 +10,14 @@ use anyhow::Context;
 use image::DynamicImage;
 use ratatui::{
     Frame,
+    buffer::Buffer,
     crossterm::event::{self, Event, KeyCode, KeyEventKind},
     layout::{Constraint, Layout, Position, Rect},
     style::{Color, Style, Stylize},
     text::{Line, Span},
-    widgets::{Block, Padding, Paragraph},
+    widgets::{
+        Block, Padding, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, StatefulWidget,
+    },
 };
 use ratatui_image::{
     Image, Resize,
@@ -229,6 +232,27 @@ fn draw_images(
     Ok(())
 }
 
+/// `None` when the whole document fits in one page.
+fn scrollbar_state(total: usize, page: usize, scroll: usize) -> Option<ScrollbarState> {
+    // ratatui puts the thumb at the bottom when position == content_length - 1,
+    // and the furthest scroll is total - page.
+    (total > page).then(|| {
+        ScrollbarState::new(total - page + 1)
+            .position(scroll)
+            .viewport_content_length(page)
+    })
+}
+
+fn draw_scrollbar(buf: &mut Buffer, area: Rect, state: &mut ScrollbarState, theme: &Theme) {
+    Scrollbar::new(ScrollbarOrientation::VerticalRight)
+        .begin_symbol(None)
+        .end_symbol(None)
+        .track_symbol(Some(ratatui::symbols::line::VERTICAL))
+        .track_style(Style::new().fg(theme.get_muted_text_color()))
+        .thumb_style(Style::new().fg(theme.get_text_color()))
+        .render(area, buf, state);
+}
+
 fn main() -> anyhow::Result<()> {
     let path = std::env::args()
         .nth(1)
@@ -365,6 +389,12 @@ fn run(
             }
 
             let total = d.lines.len();
+            if body.width > 0
+                && let Some(mut state) = scrollbar_state(total, page, scroll)
+            {
+                let area = Rect::new(body.right().saturating_sub(1), inner.y, 1, inner.height);
+                draw_scrollbar(f.buffer_mut(), area, &mut state, &theme);
+            }
             let pct = if total <= page {
                 100
             } else {
@@ -414,6 +444,33 @@ fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn thumb_rows(total: usize, page: usize, scroll: usize) -> Vec<u16> {
+        let area = Rect::new(0, 0, 1, page as u16);
+        let mut buf = Buffer::empty(area);
+        let mut state = scrollbar_state(total, page, scroll).unwrap();
+        draw_scrollbar(&mut buf, area, &mut state, &Theme::new(ThemeMode::Dark));
+        (0..area.height)
+            .filter(|&y| buf[(0, y)].symbol() == "█")
+            .collect()
+    }
+
+    #[test]
+    fn scrollbar_thumb_spans_top_to_bottom_of_the_track() {
+        let (total, page) = (100, 10);
+        assert_eq!(thumb_rows(total, page, 0).first(), Some(&0));
+        assert_eq!(
+            thumb_rows(total, page, total - page).last(),
+            Some(&(page as u16 - 1))
+        );
+        assert!(!thumb_rows(total, page, total - page).contains(&0));
+    }
+
+    #[test]
+    fn no_scrollbar_when_the_document_fits() {
+        assert!(scrollbar_state(10, 10, 0).is_none());
+        assert!(scrollbar_state(3, 10, 0).is_none());
+    }
 
     #[test]
     fn image_headings_are_drawn_in_the_current_themes_colors() {
