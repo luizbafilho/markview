@@ -7,7 +7,7 @@ A user scrolls the document by line, by page, or to either end, with the keyboar
 - `nav-line` moves one line with `j`/`k` or `↓`/`↑`.
 - `nav-page` moves one screen with `space`/`d`/`PgDn` and `b`/`u`/`PgUp`.
 - `nav-jump` goes to the top with `g`/`Home` and to the bottom with `G`/`End`.
-- `nav-wheel` scrolls three lines per mouse-wheel notch. markview captures the mouse, so text selection needs `Shift` + drag.
+- `nav-wheel` scrolls three lines per mouse-wheel notch. markview captures the mouse and does its own text selection, see [selection.md](./selection.md).
 - `nav-scrollbar` jumps to a point in the document when the user clicks or drags the scrollbar in the rightmost column. The top row of the track is 0% and the bottom row is 100%. A drag that starts on the bar keeps following the pointer off the column until the button is released. Short documents have no bar.
 - `nav-clamp` never scrolls above 0% or past 100%.
 - `nav-status` keeps the percentage in the status bar matched to the scroll position.
@@ -37,4 +37,4 @@ Preconditions:
 
 - The percentages above hold only at the default 1920x1080 output (174x43 cells). If `doctor` reports another size, assert relative moves instead.
 - The status percentage is an integer, so small moves can leave it unchanged. Compare screen text for line-level moves.
-- markview enables mouse capture, so `Shift` + drag is the way to select text. Terminals report SGR mouse events to markview, not arrow keys.
+- markview enables mouse capture. Terminals report SGR mouse events to markview, not arrow keys.

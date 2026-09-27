@@ -109,10 +109,11 @@ markview sample.md
 | `b` `u` / `PgUp`            | Page up                        |
 | `g` `G` / `Home` `End`      | Jump to top or bottom          |
 | Click or drag the scrollbar | Jump to that point             |
-| `Shift` + drag              | Select text                    |
+| Drag over text              | Select and copy                |
+| Double-click                | Select and copy a word         |
 | `q` / `Esc`                 | Quit                           |
 
-markview captures the mouse to make the scrollbar clickable. To select text, hold `Shift` while you drag. kitty, Ghostty and most other terminals hand a `Shift` drag to their own selection.
+markview copies a selection to the clipboard with OSC 52 when you release the button. kitty and Ghostty allow this by default. Scaled headings are copied whole. To use your terminal's own selection instead, hold `Shift` while you drag.
 
 ## Terminal support
 

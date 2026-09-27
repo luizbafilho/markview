@@ -3,27 +3,24 @@ use std::{
     io::Write,
     path::{Path, PathBuf},
     sync::Arc,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use anyhow::Context;
 use image::DynamicImage;
 use ratatui::{
     Frame,
-    buffer::Buffer,
     crossterm::{
         event::{
             self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind,
-            MouseButton, MouseEventKind,
+            MouseEventKind,
         },
         execute,
     },
     layout::{Constraint, Layout, Position, Rect},
     style::{Color, Style, Stylize},
     text::{Line, Span},
-    widgets::{
-        Block, Padding, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, StatefulWidget,
-    },
+    widgets::{Block, Padding, Paragraph},
 };
 use ratatui_image::{
     Image, Resize,
@@ -34,6 +31,9 @@ use ratatui_image::{
 mod heading_font;
 mod heading_image;
 mod kitty;
+mod pointer;
+mod scrollbar;
+mod selection;
 mod text_sizing;
 mod theme;
 use ratatui_markdown::{
@@ -86,6 +86,8 @@ impl ImageResolver for FsResolver {
 struct Doc {
     size: (u16, u16),
     lines: Vec<Line<'static>>,
+    /// What selecting each of `lines` copies; image headings keep their text here.
+    rows: Vec<selection::Row>,
     images: Vec<ImagePlacement>,
     headings: Vec<text_sizing::Heading>,
     rules: Vec<usize>,
@@ -141,6 +143,25 @@ fn render(
         area.width,
         theme.rule_style(),
     );
+    let heading_rows = usize::from(text_sizing::ROWS);
+    let rows = out
+        .lines
+        .iter()
+        .enumerate()
+        .map(|(i, line)| {
+            let text = line.spans.iter().map(|s| s.content.as_ref()).collect();
+            if headings
+                .iter()
+                .any(|h| (h.row..h.row + heading_rows).contains(&i))
+            {
+                selection::Row::Heading(text)
+            } else if rules.contains(&i) {
+                selection::Row::Plain(String::new())
+            } else {
+                selection::Row::Plain(text)
+            }
+        })
+        .collect();
     if let Some(Sizing::Image(font)) = sizing {
         for h in headings.drain(..) {
             let Some(line) = out.lines.get_mut(h.row).map(std::mem::take) else {
@@ -164,11 +185,14 @@ fn render(
                 crop: None,
             });
         }
+    }
+    if !matches!(sizing, Some(Sizing::Osc66)) {
         rules.clear();
     }
     Ok(Doc {
         size: (area.width, area.height),
         lines: out.lines,
+        rows,
         images: out.images,
         headings,
         rules,
@@ -238,38 +262,6 @@ fn draw_images(
     Ok(())
 }
 
-/// `None` when the whole document fits in one page.
-fn scrollbar_state(total: usize, page: usize, scroll: usize) -> Option<ScrollbarState> {
-    // ratatui puts the thumb at the bottom when position == content_length - 1,
-    // and the furthest scroll is total - page.
-    (total > page).then(|| {
-        ScrollbarState::new(total - page + 1)
-            .position(scroll)
-            .viewport_content_length(page)
-    })
-}
-
-/// The scroll offset for a click or drag at `row`: the track's top row is the
-/// start of the document and its bottom row the end.
-fn scroll_at(row: u16, track: Rect, max_scroll: usize) -> usize {
-    let last = usize::from(track.height.saturating_sub(1));
-    if last == 0 {
-        return 0;
-    }
-    let offset = usize::from(row.saturating_sub(track.y)).min(last);
-    offset * max_scroll / last
-}
-
-fn draw_scrollbar(buf: &mut Buffer, area: Rect, state: &mut ScrollbarState, theme: &Theme) {
-    Scrollbar::new(ScrollbarOrientation::VerticalRight)
-        .begin_symbol(None)
-        .end_symbol(None)
-        .track_symbol(Some(ratatui::symbols::line::VERTICAL))
-        .track_style(Style::new().fg(theme.get_muted_text_color()))
-        .thumb_style(Style::new().fg(theme.get_text_color()))
-        .render(area, buf, state);
-}
-
 fn main() -> anyhow::Result<()> {
     let path = std::env::args()
         .nth(1)
@@ -325,7 +317,8 @@ fn run(
     let mut doc: Option<Doc> = None;
     let mut page: usize;
     let mut drawn: Vec<text_sizing::Placed> = Vec::new();
-    let mut dragging = false;
+    let mut pointer = pointer::Pointer::default();
+    let mut notice: Option<String> = None;
 
     loop {
         let [body, status] = Layout::vertical([Constraint::Fill(1), Constraint::Length(1)])
@@ -342,6 +335,7 @@ fn run(
                 if stale.is_some() {
                     drawn.clear();
                 }
+                pointer.clear();
                 let d = render(md, base, inner, &theme, picker.font_size(), sizing)?;
                 if picker.protocol_type() == ProtocolType::Kitty {
                     let mut out = std::io::stdout().lock();
@@ -407,25 +401,30 @@ fn run(
                     .scroll((scroll as u16, 0)),
                 body,
             );
+            if let Some(sel) = pointer.selection() {
+                let bg = theme.selection_background();
+                sel.highlight(f.buffer_mut(), inner, scroll, &d.rows, bg);
+            }
             draw_images(f, d, inner, scroll, picker).map_err(std::io::Error::other)?;
             for p in &placed {
                 text_sizing::mark_skip(f.buffer_mut(), p);
             }
 
             if let Some(area) = bar
-                && let Some(mut state) = scrollbar_state(total, page, scroll)
+                && let Some(mut state) = scrollbar::state(total, page, scroll)
             {
-                draw_scrollbar(f.buffer_mut(), area, &mut state, &theme);
+                scrollbar::draw(f.buffer_mut(), area, &mut state, &theme);
             }
             let pct = if total <= page {
                 100
             } else {
                 scroll * 100 / (total - page)
             };
-            let status_line = Line::from(format!(
-                " {path}  {pct}%  ·  j/k ↑/↓ scroll · space/b page · g/G top/bottom · q quit"
-            ))
-            .style(theme.bar_style());
+            let hint = notice
+                .as_deref()
+                .unwrap_or("j/k ↑/↓ scroll · space/b page · g/G top/bottom · q quit");
+            let status_line =
+                Line::from(format!(" {path}  {pct}%  ·  {hint}")).style(theme.bar_style());
             f.render_widget(status_line, status);
             Ok::<(), std::io::Error>(())
         })?;
@@ -445,6 +444,11 @@ fn run(
             }
         };
         let Some(event) = event else { continue };
+        if matches!(event, Event::Key(_))
+            || matches!(event, Event::Mouse(m) if matches!(m.kind, MouseEventKind::Down(_)))
+        {
+            notice = None;
+        }
         match event {
             Event::Key(k) if k.kind == KeyEventKind::Press => match k.code {
                 KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
@@ -458,21 +462,24 @@ fn run(
                 KeyCode::Char('G') | KeyCode::End => scroll = usize::MAX / 2,
                 _ => {}
             },
-            Event::Mouse(m) => match (m.kind, bar) {
-                (MouseEventKind::ScrollDown, _) => scroll += 3,
-                (MouseEventKind::ScrollUp, _) => scroll = scroll.saturating_sub(3),
-                (MouseEventKind::Down(MouseButton::Left), Some(track))
-                    if track.contains(Position::new(m.column, m.row)) =>
-                {
-                    dragging = true;
-                    scroll = scroll_at(m.row, track, total - page);
+            Event::Mouse(m) => {
+                let view = pointer::View {
+                    body,
+                    text: inner,
+                    bar,
+                    scroll,
+                    max_scroll: total.saturating_sub(page),
+                };
+                let rows = doc.as_ref().map_or(&[][..], |d| &d.rows);
+                let out = pointer.handle(m, view, rows, Instant::now());
+                scroll = out.scroll;
+                if let Some(text) = out.copied {
+                    let mut stdout = std::io::stdout();
+                    stdout.write_all(selection::osc52(&text).as_bytes())?;
+                    stdout.flush()?;
+                    notice = Some(format!("copied {} characters", text.chars().count()));
                 }
-                (MouseEventKind::Drag(MouseButton::Left), Some(track)) if dragging => {
-                    scroll = scroll_at(m.row, track, total - page);
-                }
-                (MouseEventKind::Up(MouseButton::Left), _) => dragging = false,
-                _ => {}
-            },
+            }
             _ => {}
         }
     }
@@ -481,43 +488,43 @@ fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn thumb_rows(total: usize, page: usize, scroll: usize) -> Vec<u16> {
-        let area = Rect::new(0, 0, 1, page as u16);
-        let mut buf = Buffer::empty(area);
-        let mut state = scrollbar_state(total, page, scroll).unwrap();
-        draw_scrollbar(&mut buf, area, &mut state, &Theme::new(ThemeMode::Dark));
-        (0..area.height)
-            .filter(|&y| buf[(0, y)].symbol() == "█")
-            .collect()
-    }
+    use selection::Row;
 
     #[test]
-    fn scrollbar_thumb_spans_top_to_bottom_of_the_track() {
-        let (total, page) = (100, 10);
-        assert_eq!(thumb_rows(total, page, 0).first(), Some(&0));
+    fn copied_rows_keep_heading_text_and_drop_heading_rules() {
+        let area = Rect::new(0, 0, 40, 20);
+        let theme = Theme::new(ThemeMode::Light);
+        let md = "# Title\n\nBody text\n";
+        let plain = |s: &str| Row::Plain(s.to_owned());
+
+        let plain_doc = render(md, Path::new("."), area, &theme, (10, 20), None).unwrap();
         assert_eq!(
-            thumb_rows(total, page, total - page).last(),
-            Some(&(page as u16 - 1))
+            plain_doc.rows.get(..3),
+            Some(&[plain("Title"), plain(""), plain("")][..])
         );
-        assert!(!thumb_rows(total, page, total - page).contains(&0));
-    }
+        assert!(plain_doc.rules.is_empty(), "no OSC 66 rules to draw");
 
-    #[test]
-    fn clicking_the_track_maps_its_ends_to_the_ends_of_the_document() {
-        let track = Rect::new(170, 1, 1, 41);
-        let max = 90;
-        assert_eq!(scroll_at(1, track, max), 0);
-        assert_eq!(scroll_at(21, track, max), 45);
-        assert_eq!(scroll_at(41, track, max), max);
-        assert_eq!(scroll_at(0, track, max), 0, "dragged above the track");
-        assert_eq!(scroll_at(60, track, max), max, "dragged below the track");
-    }
-
-    #[test]
-    fn no_scrollbar_when_the_document_fits() {
-        assert!(scrollbar_state(10, 10, 0).is_none());
-        assert!(scrollbar_state(3, 10, 0).is_none());
+        let osc = render(
+            md,
+            Path::new("."),
+            area,
+            &theme,
+            (10, 20),
+            Some(&Sizing::Osc66),
+        )
+        .unwrap();
+        assert_eq!(
+            osc.rows.get(..4),
+            Some(
+                &[
+                    Row::Heading("Title".to_owned()),
+                    Row::Heading(String::new()),
+                    plain(""),
+                    plain("")
+                ][..]
+            )
+        );
+        assert_eq!(osc.rules, [2]);
     }
 
     #[test]
