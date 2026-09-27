@@ -102,13 +102,18 @@ git clone https://github.com/luizbafilho/markview && cd markview
 markview sample.md
 ```
 
-| Key                        | Action                         |
-|----------------------------|--------------------------------|
-| `j` `k` / `↓` `↑` / wheel  | Scroll                         |
-| `space` `d` / `PgDn`       | Page down                      |
-| `b` `u` / `PgUp`           | Page up                        |
-| `g` `G` / `Home` `End`     | Jump to top or bottom          |
-| `q` / `Esc`                | Quit                           |
+| Key                         | Action                         |
+|-----------------------------|--------------------------------|
+| `j` `k` / `↓` `↑` / wheel   | Scroll                         |
+| `space` `d` / `PgDn`        | Page down                      |
+| `b` `u` / `PgUp`            | Page up                        |
+| `g` `G` / `Home` `End`      | Jump to top or bottom          |
+| Click or drag the scrollbar | Jump to that point             |
+| Drag over text              | Select and copy                |
+| Double-click                | Select and copy a word         |
+| `q` / `Esc`                 | Quit                           |
+
+markview copies a selection to the clipboard with OSC 52 when you release the button. kitty and Ghostty allow this by default. Scaled headings are copied whole. To use your terminal's own selection instead, hold `Shift` while you drag.
 
 ## Terminal support
 

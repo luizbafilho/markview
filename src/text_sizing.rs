@@ -72,8 +72,8 @@ pub fn tag(blocks: &mut [MarkdownBlock]) {
 
 /// Strips the tags, underlines each h1 and h2 with a `width`-wide rule, wraps
 /// sized headings to `width` and gives each wrapped row the extra row it
-/// needs, and shifts image placements below. Returns the heading rows and rule
-/// rows to draw sized, both empty when `sized` is off.
+/// needs, and shifts image placements below. Returns the heading rows to draw
+/// sized, empty when `sized` is off, and the rule rows.
 pub fn extract(
     lines: &mut Vec<Line<'static>>,
     images: &mut [ImagePlacement],
@@ -118,9 +118,7 @@ pub fn extract(
             out.push(line);
         }
         if level < 3 {
-            if sized {
-                rules.push(out.len());
-            }
+            rules.push(out.len());
             out.push(Line::styled("─".repeat(width as usize), rule));
         }
         shifts.push((src_row, out.len() - start - 1));

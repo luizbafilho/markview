@@ -18,6 +18,7 @@ pub struct Theme {
     bar_background: Color,
     bar_text: Color,
     rule: Color,
+    selection: Color,
 }
 
 impl Theme {
@@ -68,6 +69,7 @@ impl Theme {
             bar_background: rgb(c.mantle),
             bar_text: rgb(c.subtext0),
             rule: rgb(c.surface0),
+            selection: rgb(c.surface2),
         }
     }
 
@@ -85,6 +87,10 @@ impl Theme {
 
     pub const fn bar_style(&self) -> Style {
         Style::new().bg(self.bar_background).fg(self.bar_text)
+    }
+
+    pub const fn selection_background(&self) -> Color {
+        self.selection
     }
 }
 

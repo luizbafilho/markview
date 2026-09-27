@@ -1,170 +1,46 @@
 use std::{
-    collections::HashMap,
     io::Write,
-    path::{Path, PathBuf},
-    sync::Arc,
-    time::Duration,
+    path::Path,
+    time::{Duration, Instant},
 };
 
 use anyhow::Context;
-use image::DynamicImage;
+use doc::{Doc, Sizing, render};
 use ratatui::{
     Frame,
-    crossterm::event::{self, Event, KeyCode, KeyEventKind},
+    crossterm::{
+        event::{
+            self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind,
+            MouseEventKind,
+        },
+        execute,
+    },
     layout::{Constraint, Layout, Position, Rect},
-    style::{Color, Style, Stylize},
-    text::{Line, Span},
+    text::Line,
     widgets::{Block, Padding, Paragraph},
 };
 use ratatui_image::{
     Image, Resize,
     picker::{Picker, ProtocolType},
-    protocol::Protocol,
-};
-
-mod heading_font;
-mod heading_image;
-mod kitty;
-mod text_sizing;
-mod theme;
-use ratatui_markdown::{
-    highlight::{HighlightHooks, TreeSitterHighlighter},
-    markdown::{
-        MarkdownRenderer,
-        image::{ImagePlacement, ImageResolver},
-    },
-    theme::RichTextTheme,
 };
 use terminal_colorsaurus::{QueryOptions, ThemeMode, theme_mode};
 use theme::Theme;
 
-/// Loads images relative to the markdown file and sizes them using the
-/// terminal's real cell size in pixels.
-struct FsResolver {
-    base: PathBuf,
-    cell_px: (u16, u16),
-    fallback_color: Color,
-}
-
-impl ImageResolver for FsResolver {
-    fn resolve(&mut self, path: &str) -> Option<DynamicImage> {
-        image::open(self.base.join(path)).ok()
-    }
-
-    fn cell_dimensions(&mut self, img: &DynamicImage, max_w: u16, max_h: u16) -> (u16, u16) {
-        let (fw, fh) = (f64::from(self.cell_px.0), f64::from(self.cell_px.1));
-        let (pw, ph) = (f64::from(img.width()), f64::from(img.height()));
-        let max_w = f64::from(max_w.min(kitty::MAX_CELLS));
-        let max_h = f64::from(max_h.min(kitty::MAX_CELLS));
-        let mut w = (pw / fw).ceil().min(max_w);
-        let mut h = (ph * w * fw / pw / fh).ceil();
-        if h > max_h {
-            h = max_h;
-            w = (pw * h * fh / ph / fw).ceil();
-        }
-        (w.max(1.0) as u16, h.max(1.0) as u16)
-    }
-
-    fn fallback(&self, path: &str, alt: &str) -> Span<'static> {
-        let label = if alt.is_empty() { path } else { alt };
-        Span::styled(
-            format!("[image not loaded: {label}]"),
-            Style::new().italic().fg(self.fallback_color),
-        )
-    }
-}
-
-struct Doc {
-    size: (u16, u16),
-    lines: Vec<Line<'static>>,
-    images: Vec<ImagePlacement>,
-    headings: Vec<text_sizing::Heading>,
-    rules: Vec<usize>,
-    /// Non-kitty protocols, per image: (rows cut off the top, visible rows, encoded protocol).
-    encoded: HashMap<usize, (u16, u16, Protocol)>,
-}
+mod doc;
+mod heading_font;
+mod heading_image;
+mod kitty;
+mod pointer;
+mod scrollbar;
+mod selection;
+mod text_sizing;
+mod theme;
 
 /// Idle time before asking the terminal whether its background changed.
 const THEME_POLL: Duration = Duration::from_secs(1);
 
 fn kitty_id(image_index: usize) -> u32 {
     0x4D_4B_00 + image_index as u32 + 1
-}
-
-enum Sizing {
-    Osc66,
-    Image(heading_image::HeadingFont),
-}
-
-fn render(
-    md: &str,
-    base: &Path,
-    area: Rect,
-    theme: &Theme,
-    cell_px: (u16, u16),
-    sizing: Option<&Sizing>,
-) -> anyhow::Result<Doc> {
-    let width = area.width as usize;
-    let highlighter =
-        Arc::new(TreeSitterHighlighter::new().with_code_colors(theme.get_code_colors()));
-    let hooks = HighlightHooks::new(highlighter, width).with_border_color(theme.get_border_color());
-    let renderer = MarkdownRenderer::new(width).with_render_hooks(Box::new(hooks));
-    let mut resolver = FsResolver {
-        base: base.to_path_buf(),
-        cell_px,
-        fallback_color: theme.get_muted_text_color(),
-    };
-    let (mut blocks, loaded) = renderer.parse_with_images(md, &mut resolver);
-    text_sizing::tag(&mut blocks);
-    let max_img_h = area.height.saturating_sub(2).max(1);
-    let mut out = renderer.render_full(
-        &blocks,
-        theme,
-        &loaded,
-        &mut resolver,
-        area.width,
-        max_img_h,
-    );
-    let (mut headings, mut rules) = text_sizing::extract(
-        &mut out.lines,
-        &mut out.images,
-        sizing.is_some(),
-        area.width,
-        theme.rule_style(),
-    );
-    if let Some(Sizing::Image(font)) = sizing {
-        for h in headings.drain(..) {
-            let Some(line) = out.lines.get_mut(h.row).map(std::mem::take) else {
-                continue;
-            };
-            let (image, cols) = heading_image::rasterize(
-                font,
-                &line,
-                h.level,
-                cell_px,
-                area.width,
-                theme.get_text_color(),
-                theme.get_background_color(),
-            )?;
-            out.images.push(ImagePlacement {
-                row: h.row,
-                col: 0,
-                width_cells: cols,
-                height_cells: text_sizing::ROWS,
-                image,
-                crop: None,
-            });
-        }
-        rules.clear();
-    }
-    Ok(Doc {
-        size: (area.width, area.height),
-        lines: out.lines,
-        images: out.images,
-        headings,
-        rules,
-        encoded: HashMap::new(),
-    })
 }
 
 /// Draws each image into the blank rows the renderer reserved for it,
@@ -253,6 +129,7 @@ fn main() -> anyhow::Result<()> {
         None
     };
     terminal.clear()?;
+    execute!(std::io::stdout(), EnableMouseCapture)?;
     let result = run(
         &mut terminal,
         &path,
@@ -265,6 +142,7 @@ fn main() -> anyhow::Result<()> {
     if picker.protocol_type() == ProtocolType::Kitty {
         std::io::stdout().write_all(kitty::DELETE_ALL.as_bytes())?;
     }
+    execute!(std::io::stdout(), DisableMouseCapture)?;
     ratatui::restore();
     result
 }
@@ -282,6 +160,8 @@ fn run(
     let mut doc: Option<Doc> = None;
     let mut page: usize;
     let mut drawn: Vec<text_sizing::Placed> = Vec::new();
+    let mut pointer = pointer::Pointer::default();
+    let mut notice: Option<String> = None;
 
     loop {
         let [body, status] = Layout::vertical([Constraint::Fill(1), Constraint::Length(1)])
@@ -298,6 +178,7 @@ fn run(
                 if stale.is_some() {
                     drawn.clear();
                 }
+                pointer.clear();
                 let d = render(md, base, inner, &theme, picker.font_size(), sizing)?;
                 if picker.protocol_type() == ProtocolType::Kitty {
                     let mut out = std::io::stdout().lock();
@@ -352,6 +233,10 @@ fn run(
             .collect();
         text_sizing::erase(&mut std::io::stdout(), &gone)?;
 
+        let total = d.lines.len();
+        let bar = (body.width > 0 && total > page)
+            .then(|| Rect::new(body.right().saturating_sub(1), inner.y, 1, inner.height));
+
         terminal.try_draw(|f| {
             f.render_widget(
                 Paragraph::new(d.lines.clone())
@@ -359,21 +244,30 @@ fn run(
                     .scroll((scroll as u16, 0)),
                 body,
             );
+            if let Some(sel) = pointer.selection() {
+                let bg = theme.selection_background();
+                sel.highlight(f.buffer_mut(), inner, scroll, &d.rows, bg);
+            }
             draw_images(f, d, inner, scroll, picker).map_err(std::io::Error::other)?;
             for p in &placed {
                 text_sizing::mark_skip(f.buffer_mut(), p);
             }
 
-            let total = d.lines.len();
+            if let Some(area) = bar
+                && let Some(mut state) = scrollbar::state(total, page, scroll)
+            {
+                scrollbar::draw(f.buffer_mut(), area, &mut state, &theme);
+            }
             let pct = if total <= page {
                 100
             } else {
                 scroll * 100 / (total - page)
             };
-            let status_line = Line::from(format!(
-                " {path}  {pct}%  ·  j/k ↑/↓ scroll · space/b page · g/G top/bottom · q quit"
-            ))
-            .style(theme.bar_style());
+            let hint = notice
+                .as_deref()
+                .unwrap_or("j/k ↑/↓ scroll · space/b page · g/G top/bottom · q quit");
+            let status_line =
+                Line::from(format!(" {path}  {pct}%  ·  {hint}")).style(theme.bar_style());
             f.render_widget(status_line, status);
             Ok::<(), std::io::Error>(())
         })?;
@@ -393,6 +287,11 @@ fn run(
             }
         };
         let Some(event) = event else { continue };
+        if matches!(event, Event::Key(_))
+            || matches!(event, Event::Mouse(m) if matches!(m.kind, MouseEventKind::Down(_)))
+        {
+            notice = None;
+        }
         match event {
             Event::Key(k) if k.kind == KeyEventKind::Press => match k.code {
                 KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
@@ -406,42 +305,25 @@ fn run(
                 KeyCode::Char('G') | KeyCode::End => scroll = usize::MAX / 2,
                 _ => {}
             },
-            _ => {}
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn image_headings_are_drawn_in_the_current_themes_colors() {
-        let sizing = Sizing::Image(
-            heading_image::HeadingFont::load(&heading_font::Families::default()).unwrap(),
-        );
-        let area = Rect::new(0, 0, 80, 40);
-        for mode in [ThemeMode::Light, ThemeMode::Dark] {
-            let theme = Theme::new(mode);
-            let md = "# Title\n\n## Sub\n\n### Third\n";
-            let doc = render(md, Path::new("."), area, &theme, (10, 20), Some(&sizing)).unwrap();
-            let Color::Rgb(r, g, b) = theme.get_background_color() else {
-                unreachable!()
-            };
-
-            assert_eq!(doc.images.len(), 3, "{mode:?}");
-            // Inline formatting gives every heading span the text color.
-            let Color::Rgb(tr, tg, tb) = theme.get_text_color() else {
-                unreachable!()
-            };
-            for img in &doc.images {
-                let px = img.image.to_rgba8();
-                assert_eq!(px.get_pixel(0, 0).0[..3], [r, g, b], "{mode:?} background");
-                assert!(
-                    px.pixels().any(|p| p.0[..3] == [tr, tg, tb]),
-                    "{mode:?} text color missing"
-                );
+            Event::Mouse(m) => {
+                let view = pointer::View {
+                    body,
+                    text: inner,
+                    bar,
+                    scroll,
+                    max_scroll: total.saturating_sub(page),
+                };
+                let rows = doc.as_ref().map_or(&[][..], |d| &d.rows);
+                let out = pointer.handle(m, view, rows, Instant::now());
+                scroll = out.scroll;
+                if let Some(text) = out.copied {
+                    let mut stdout = std::io::stdout();
+                    stdout.write_all(selection::osc52(&text).as_bytes())?;
+                    stdout.flush()?;
+                    notice = Some(format!("copied {} characters", text.chars().count()));
+                }
             }
+            _ => {}
         }
     }
 }
