@@ -95,6 +95,8 @@ cargo install --locked --git https://github.com/luizbafilho/markview
 markview notes.md
 ```
 
+markview reloads the file when it changes on disk, so you can keep it open beside your editor. Each save repaints the view within a tenth of a second and keeps your scroll position.
+
 Try it on the bundled tour of everything above:
 
 ```sh
