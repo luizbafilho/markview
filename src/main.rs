@@ -11,7 +11,13 @@ use image::DynamicImage;
 use ratatui::{
     Frame,
     buffer::Buffer,
-    crossterm::event::{self, Event, KeyCode, KeyEventKind},
+    crossterm::{
+        event::{
+            self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind,
+            MouseButton, MouseEventKind,
+        },
+        execute,
+    },
     layout::{Constraint, Layout, Position, Rect},
     style::{Color, Style, Stylize},
     text::{Line, Span},
@@ -243,6 +249,17 @@ fn scrollbar_state(total: usize, page: usize, scroll: usize) -> Option<Scrollbar
     })
 }
 
+/// The scroll offset for a click or drag at `row`: the track's top row is the
+/// start of the document and its bottom row the end.
+fn scroll_at(row: u16, track: Rect, max_scroll: usize) -> usize {
+    let last = usize::from(track.height.saturating_sub(1));
+    if last == 0 {
+        return 0;
+    }
+    let offset = usize::from(row.saturating_sub(track.y)).min(last);
+    offset * max_scroll / last
+}
+
 fn draw_scrollbar(buf: &mut Buffer, area: Rect, state: &mut ScrollbarState, theme: &Theme) {
     Scrollbar::new(ScrollbarOrientation::VerticalRight)
         .begin_symbol(None)
@@ -277,6 +294,7 @@ fn main() -> anyhow::Result<()> {
         None
     };
     terminal.clear()?;
+    execute!(std::io::stdout(), EnableMouseCapture)?;
     let result = run(
         &mut terminal,
         &path,
@@ -289,6 +307,7 @@ fn main() -> anyhow::Result<()> {
     if picker.protocol_type() == ProtocolType::Kitty {
         std::io::stdout().write_all(kitty::DELETE_ALL.as_bytes())?;
     }
+    execute!(std::io::stdout(), DisableMouseCapture)?;
     ratatui::restore();
     result
 }
@@ -306,6 +325,7 @@ fn run(
     let mut doc: Option<Doc> = None;
     let mut page: usize;
     let mut drawn: Vec<text_sizing::Placed> = Vec::new();
+    let mut dragging = false;
 
     loop {
         let [body, status] = Layout::vertical([Constraint::Fill(1), Constraint::Length(1)])
@@ -376,6 +396,10 @@ fn run(
             .collect();
         text_sizing::erase(&mut std::io::stdout(), &gone)?;
 
+        let total = d.lines.len();
+        let bar = (body.width > 0 && total > page)
+            .then(|| Rect::new(body.right().saturating_sub(1), inner.y, 1, inner.height));
+
         terminal.try_draw(|f| {
             f.render_widget(
                 Paragraph::new(d.lines.clone())
@@ -388,11 +412,9 @@ fn run(
                 text_sizing::mark_skip(f.buffer_mut(), p);
             }
 
-            let total = d.lines.len();
-            if body.width > 0
+            if let Some(area) = bar
                 && let Some(mut state) = scrollbar_state(total, page, scroll)
             {
-                let area = Rect::new(body.right().saturating_sub(1), inner.y, 1, inner.height);
                 draw_scrollbar(f.buffer_mut(), area, &mut state, &theme);
             }
             let pct = if total <= page {
@@ -436,6 +458,21 @@ fn run(
                 KeyCode::Char('G') | KeyCode::End => scroll = usize::MAX / 2,
                 _ => {}
             },
+            Event::Mouse(m) => match (m.kind, bar) {
+                (MouseEventKind::ScrollDown, _) => scroll += 3,
+                (MouseEventKind::ScrollUp, _) => scroll = scroll.saturating_sub(3),
+                (MouseEventKind::Down(MouseButton::Left), Some(track))
+                    if track.contains(Position::new(m.column, m.row)) =>
+                {
+                    dragging = true;
+                    scroll = scroll_at(m.row, track, total - page);
+                }
+                (MouseEventKind::Drag(MouseButton::Left), Some(track)) if dragging => {
+                    scroll = scroll_at(m.row, track, total - page);
+                }
+                (MouseEventKind::Up(MouseButton::Left), _) => dragging = false,
+                _ => {}
+            },
             _ => {}
         }
     }
@@ -464,6 +501,17 @@ mod tests {
             Some(&(page as u16 - 1))
         );
         assert!(!thumb_rows(total, page, total - page).contains(&0));
+    }
+
+    #[test]
+    fn clicking_the_track_maps_its_ends_to_the_ends_of_the_document() {
+        let track = Rect::new(170, 1, 1, 41);
+        let max = 90;
+        assert_eq!(scroll_at(1, track, max), 0);
+        assert_eq!(scroll_at(21, track, max), 45);
+        assert_eq!(scroll_at(41, track, max), max);
+        assert_eq!(scroll_at(0, track, max), 0, "dragged above the track");
+        assert_eq!(scroll_at(60, track, max), max, "dragged below the track");
     }
 
     #[test]

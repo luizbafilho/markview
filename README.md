@@ -102,13 +102,17 @@ git clone https://github.com/luizbafilho/markview && cd markview
 markview sample.md
 ```
 
-| Key                        | Action                         |
-|----------------------------|--------------------------------|
-| `j` `k` / `↓` `↑` / wheel  | Scroll                         |
-| `space` `d` / `PgDn`       | Page down                      |
-| `b` `u` / `PgUp`           | Page up                        |
-| `g` `G` / `Home` `End`     | Jump to top or bottom          |
-| `q` / `Esc`                | Quit                           |
+| Key                         | Action                         |
+|-----------------------------|--------------------------------|
+| `j` `k` / `↓` `↑` / wheel   | Scroll                         |
+| `space` `d` / `PgDn`        | Page down                      |
+| `b` `u` / `PgUp`            | Page up                        |
+| `g` `G` / `Home` `End`      | Jump to top or bottom          |
+| Click or drag the scrollbar | Jump to that point             |
+| `Shift` + drag              | Select text                    |
+| `q` / `Esc`                 | Quit                           |
+
+markview captures the mouse to make the scrollbar clickable. To select text, hold `Shift` while you drag. kitty, Ghostty and most other terminals hand a `Shift` drag to their own selection.
 
 ## Terminal support
 

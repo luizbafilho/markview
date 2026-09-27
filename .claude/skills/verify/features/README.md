@@ -34,7 +34,7 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 ## Features
 
 - [Launch and exit](./launch.md) covers opening a file, argument errors, quitting, and restoring the terminal.
-- [Navigation](./navigation.md) covers line, page, and jump keys, the mouse wheel, and the status bar percentage.
+- [Navigation](./navigation.md) covers line, page, and jump keys, the mouse wheel, the clickable scrollbar, and the status bar percentage.
 - [Document rendering](./render.md) covers sized headings, bordered tables, task lists, blockquotes, inline styles, and highlighted code.
 - [Mermaid diagrams](./diagrams.md) covers flowcharts, sequence diagrams, Gantt charts, and pie charts drawn in text.
 - [Images](./images.md) covers inline images, relative paths, the missing-image fallback, and cropping while scrolling.
