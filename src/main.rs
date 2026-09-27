@@ -35,9 +35,12 @@ mod scrollbar;
 mod selection;
 mod text_sizing;
 mod theme;
+mod watch;
 
 /// Idle time before asking the terminal whether its background changed.
 const THEME_POLL: Duration = Duration::from_secs(1);
+/// How often to check whether the open file changed on disk.
+const FILE_POLL: Duration = Duration::from_millis(100);
 
 fn kitty_id(image_index: usize) -> u32 {
     0x4D_4B_00 + image_index as u32 + 1
@@ -109,7 +112,7 @@ fn main() -> anyhow::Result<()> {
     let path = std::env::args()
         .nth(1)
         .context("usage: markview <file.md>")?;
-    let md = std::fs::read_to_string(&path).with_context(|| format!("reading {path}"))?;
+    let mut file = watch::Watched::open(&path)?;
     let base = Path::new(&path)
         .parent()
         .unwrap_or_else(|| Path::new("."))
@@ -133,7 +136,7 @@ fn main() -> anyhow::Result<()> {
     let result = run(
         &mut terminal,
         &path,
-        &md,
+        &mut file,
         &base,
         theme,
         &picker,
@@ -150,7 +153,7 @@ fn main() -> anyhow::Result<()> {
 fn run(
     terminal: &mut ratatui::DefaultTerminal,
     path: &str,
-    md: &str,
+    file: &mut watch::Watched,
     base: &Path,
     mut theme: Theme,
     picker: &Picker,
@@ -179,7 +182,14 @@ fn run(
                     drawn.clear();
                 }
                 pointer.clear();
-                let d = render(md, base, inner, &theme, picker.font_size(), sizing)?;
+                let d = render(
+                    file.contents(),
+                    base,
+                    inner,
+                    &theme,
+                    picker.font_size(),
+                    sizing,
+                )?;
                 if picker.protocol_type() == ProtocolType::Kitty {
                     let mut out = std::io::stdout().lock();
                     for (i, p) in d.images.iter().enumerate() {
@@ -274,10 +284,19 @@ fn run(
         text_sizing::draw(&mut std::io::stdout(), &fresh)?;
         drawn = placed;
 
+        let mut theme_checked = Instant::now();
         let event = loop {
-            if event::poll(THEME_POLL)? {
+            if event::poll(FILE_POLL)? {
                 break Some(event::read()?);
             }
+            if file.refresh() {
+                doc = None;
+                break None;
+            }
+            if theme_checked.elapsed() < THEME_POLL {
+                continue;
+            }
+            theme_checked = Instant::now();
             if let Ok(mode) = theme_mode(QueryOptions::default())
                 && mode != theme.mode()
             {
