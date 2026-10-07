@@ -243,7 +243,11 @@ cmd_cleanup() {
     done
     rm -f "$pidfile"
   fi
-  if [[ -n "$(monitor "$run")" ]]; then hyprctl output remove "$(name "$run")" >/dev/null; fi
+  if [[ -n "$(monitor "$run")" ]]; then
+    # Removing an output force-warps the pointer to another monitor; one batch puts it back before a frame is drawn.
+    local x y; IFS=', ' read -r x y <<<"$(hyprctl cursorpos)"
+    hyprctl --batch "output remove $(name "$run") ; dispatch hl.dsp.cursor.move({ x = $x, y = $y })" >/dev/null
+  fi
   rm -f "$RUNTIME/$run.sock"
   printf 'cleaned run %s, evidence kept in %s\n' "$run" "$(evidence "$run")"
 }
