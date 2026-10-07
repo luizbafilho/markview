@@ -7,13 +7,14 @@ use std::{
 use anyhow::Context;
 use doc::{Doc, Sizing, render};
 use ratatui::{
-    Frame,
+    Frame, TerminalOptions, Viewport,
     crossterm::{
         event::{
             self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind,
             MouseEventKind,
         },
         execute,
+        terminal::EnterAlternateScreen,
     },
     layout::{Constraint, Layout, Position, Rect},
     text::Line,
@@ -118,7 +119,13 @@ fn main() -> anyhow::Result<()> {
         .unwrap_or_else(|| Path::new("."))
         .to_path_buf();
 
-    let mut terminal = ratatui::init();
+    // A fixed viewport stops try_draw from resizing the buffer after run() has
+    // laid out the frame for an earlier size; run() resizes it instead.
+    let (width, height) = ratatui::crossterm::terminal::size()?;
+    let mut terminal = ratatui::try_init_with_options(TerminalOptions {
+        viewport: Viewport::Fixed(Rect::new(0, 0, width, height)),
+    })?;
+    execute!(std::io::stdout(), EnterAlternateScreen)?;
     // mosh, GNU Screen, PuTTY and the Linux console never report their background.
     let theme = Theme::new(theme_mode(QueryOptions::default()).unwrap_or(ThemeMode::Light));
     let picker = Picker::from_query_stdio().context("querying terminal graphics support")?;
@@ -167,8 +174,12 @@ fn run(
     let mut notice: Option<String> = None;
 
     loop {
-        let [body, status] = Layout::vertical([Constraint::Fill(1), Constraint::Length(1)])
-            .areas(Rect::from((Position::default(), terminal.size()?)));
+        let screen = Rect::from((Position::default(), terminal.size()?));
+        if screen != terminal.get_frame().area() {
+            terminal.resize(screen)?;
+        }
+        let [body, status] =
+            Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).areas(screen);
         let block = Block::new()
             .padding(Padding::new(2, 2, 1, 0))
             .style(theme.base_style());
